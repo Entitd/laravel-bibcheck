@@ -128,33 +128,29 @@ class BibtexParserService
         $lineKeys = array_keys($recordLines);
         $firstLineKey = $lineKeys[0];
 
-        $header = $this->extractHeader($recordLines[$firstLineKey], $firstLineKey);
+        // 1. Заголовок (теперь запятая после ключа необязательна для парсинга)
+        $firstLine = $recordLines[$firstLineKey];
+        $header = $this->extractHeader($firstLine, $firstLineKey);
+
         if (isset($header['error'])) return ['error' => [$header['error']], 'zapis' => []];
 
-        // ПРОВЕРКА: А была ли запятая в заголовке?
+        // Проверка на пропущенную запятую в заголовке
         if (!str_contains($header['full_match'], ',')) {
-            $errors[] = "СИНТАКСИС (Строка $firstLineKey): Пропущена запятая после ключа записи '{$header['key']}'.";
+            $errors[] = "СИНТАКСИС (Строка $firstLineKey): Пропущена запятая после ключа '{$header['key']}'.";
         }
 
-        $recordType = $header['type'];
-        $parsedEntry[$firstLineKey][] = ['type' => $recordType, 'key' => $header['key']];
+        $parsedEntry[$firstLineKey][] = ['type' => $header['type'], 'key' => $header['key']];
 
+        // 2. Создание буфера и карты строк
         $buffer = "";
         $lineMap = [];
-
         foreach ($recordLines as $lineKey => $line) {
-            $textToProcess = $line;
-
-            if ($lineKey === $firstLineKey) {
-                // Отрезаем именно то, что нашла регулярка заголовка
-                $textToProcess = substr($line, strlen($header['full_match']));
-            }
-
-            $trimmed = trim($textToProcess);
-            if ($trimmed === '}' || empty($trimmed)) continue;
+            $text = ($lineKey === $firstLineKey)
+                ? substr($line, strlen($header['full_match']))
+                : $line;
 
             $startPos = strlen($buffer);
-            $buffer .= $textToProcess . " ";
+            $buffer .= $text . " ";
             $endPos = strlen($buffer);
 
             for ($i = $startPos; $i < $endPos; $i++) {
@@ -162,50 +158,45 @@ class BibtexParserService
             }
         }
 
-        // 3. Универсальный поиск полей: ключ = {значение} ИЛИ ключ = "значение" ИЛИ ключ = значение
-        preg_match_all('/(\w+)\s*=\s*(\{.*?\}|".*?"|[^{},\s][^,]*)/su', $buffer, $matches, PREG_SET_ORDER | PREG_OFFSET_CAPTURE);
-
-        var_dump($matches);
+        // 3. СУПЕР-РЕГУЛЯРКА для полей
+        // Она ищет ключ, а затем захватывает значение, балансируя между скобками
+        // или останавливаясь перед следующим полем.
+        preg_match_all('/(\w+)\s*=\s*(\{.*?\}|".*?"|[^{},\s][^=]*(?=\s*,\s*\w+\s*=|\s*\}|$))/su', $buffer, $matches, PREG_SET_ORDER | PREG_OFFSET_CAPTURE);
 
         $lastMatchEnd = 0;
-
         foreach ($matches as $match) {
             $fieldName = strtolower($match[1][0]);
-            $fieldValueRaw = $match[2][0];
+            $fieldValueRaw = trim($match[2][0]);
             $fieldOffset = $match[0][1];
             $fieldEnd = $fieldOffset + strlen($match[0][0]);
 
-            // Определяем строку по позиции первого символа поля в буфере
             $currentLine = $lineMap[$fieldOffset] ?? $firstLineKey;
 
-            // Очищаем значение от скобок и кавычек
-            $cleanValue = trim($fieldValueRaw, " \t\n\r\0\x0B{},\"");
+            // Чистим внешние скобки/кавычки, если они есть
+            $cleanValue = preg_replace('/^\{|\}$|^\"|\"$/u', '', $fieldValueRaw);
+
+            // Проверка на твой случай: author=Value} (пропущена открывающая скобка)
+            if (str_ends_with($fieldValueRaw, '}') && !str_starts_with($fieldValueRaw, '{')) {
+                $errors[] = "СИНТАКСИС (Строка $currentLine): У поля '$fieldName' есть закрывающая скобка, но нет открывающей.";
+                $cleanValue = rtrim($cleanValue, '}');
+            }
 
             $foundFields[$fieldName] = true;
+            $parsedEntry[$currentLine][] = ['field' => $fieldName, 'value' => trim($cleanValue)];
 
-            // Добавляем поле в массив полей для данной строки
-            $parsedEntry[$currentLine][] = ['field' => $fieldName, 'value' => $cleanValue];
-
-            // 4. Проверка пропущенных запятых (анализ промежутков между полями)
+            // 4. Проверка запятой между полями
             if ($lastMatchEnd > 0) {
                 $gap = substr($buffer, $lastMatchEnd, $fieldOffset - $lastMatchEnd);
                 if (!str_contains($gap, ',')) {
-                    // Если запятой нет, ругаемся на строку, где закончилось предыдущее поле
-                    $errorLine = $lineMap[$lastMatchEnd - 1] ?? $currentLine;
+                    $errorLine = $lineMap[$lastMatchEnd] ?? $currentLine;
                     $errors[] = "СИНТАКСИС (Строка $errorLine): Пропущена запятая перед полем '$fieldName'.";
                 }
             }
-
             $lastMatchEnd = $fieldEnd;
         }
 
-        // 5. Бизнес-валидация (обязательные поля, ГОСТ и т.д.)
-        $validationErrors = $this->validateEntry($recordType, $foundFields, $firstLineKey);
-
-        return [
-            'error' => array_merge($errors, $validationErrors),
-            'zapis' => $parsedEntry
-        ];
+        $validationErrors = $this->validateEntry($header['type'], $foundFields, $firstLineKey);
+        return ['error' => array_merge($errors, $validationErrors), 'zapis' => $parsedEntry];
     }
 
 
