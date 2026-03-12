@@ -2,443 +2,324 @@
 
 namespace App\Services;
 
-
-use App\Models\BibFile;          // Нужно для метода parseAndSave
-use App\Models\BibEntry;         // Если будешь создавать записи напрямую
-use App\Models\ValidationError;  // Для сохранения ошибок
-use App\Models\CourseRequirement; // Для метода proverka_na_kafedru
+use App\Models\BibFile;
+use App\Models\BibEntry;
+use App\Models\ValidationError;
+use App\Models\CourseRequirement;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Log;
 
+/**
+ * Сервис для парсинга, валидации и анализа BibTeX файлов.
+ * Проверяет синтаксис, обязательные поля и соответствие требованиям кафедры.
+ */
 class BibtexParserService
 {
-    // Технические типы BibTeX (можно оставить константой или вынести в конфиг)
+    /**
+     * Справочник типов записей BibTeX и их обязательных полей.
+     * В будущем планируется перенос в БД для гибкой настройки.
+     */
     private const BIBTEX_DB_TYPES = [
-        'article' => ['author', 'title', 'journal', 'year'],
-        'book' => ['author', 'title', 'publisher', 'year'],
-        // ... добавьте остальные типы из вашего исходного массива
-        'manual' => ['title', 'author', 'organization', 'year'],
+        'article'        => ["author", "title", "journal", "year", "pages", "volume", "number"],
+        'book'           => ["author", "title", "year", "address", "publisher", "pagetotal"],
+        'manual'         => ["organization", "title", "year"],
+        'misc'           => ["author", "title", "urldate", "url"],
+        'online'         => ["author", "title", "urldate", "url"],
+        'mvbook'         => ["author", "title", "year", "address", "publisher", "pagetotal"],
+        'inbook'         => ["author", "title", "booktitle", "year"],
+        'bookinbook'     => ["author", "title", "booktitle", "year"],
+        'suppbook'       => ["author", "title", "booktitle", "year"],
+        'booklet'        => ["author", "title", "year"],
+        'collection'     => ["editor", "title", "year"],
+        'mvcollection'   => ["editor", "title", "year"],
+        'incollection'   => ["author", "title", "booktitle", "year"],
+        'suppcollection' => ["author", "title", "booktitle", "year"],
+        'patent'         => ["author", "title", "number", "year"],
+        'periodical'     => ["editor", "title", "year"],
+        'suppperiodical' => ["author", "title", "journal", "year", "pages"],
+        'proceedings'    => ["title", "year"],
+        'mvproceedings'  => ["title", "year"],
+        'inproceedings'  => ["author", "title", "booktitle", "year", "pages", "organization"],
+        'reference'      => ["editor", "title", "year"],
+        'mvreference'    => ["editor", "title", "year"],
+        'inreference'    => ["author", "title", "booktitle", "year"],
+        'report'         => ["author", "title", "type", "institution", "year"],
+        'thesis'         => ["author", "title", "type", "institution", "year"],
+        'unpublished'    => ["author", "title", "year"],
+        'mastersthesis'  => ["author", "title", "institution", "year"],
+        'techreport'     => ["author", "title", "institution", "year"],
+        'conference'     => ["author", "title", "booktitle", "year", "pages", "organization"],
+        'electronic'     => ["author", "title", "urldate", "url"],
+        'phdthesis'      => ["author", "title", "institution", "year"],
+        'www'            => ["author", "title", "urldate", "url"],
+        'school'         => ["author", "title", "institution", "year"],
     ];
 
     /**
-     * Основной метод для выполнения анализа с кэшированием.
-     * * @param string $text Содержимое BibTeX-файла.
-     * @return array Результаты анализа (метрики, ошибки, результат курса).
+     * Выполняет полный цикл обработки текста: разбиение, парсинг и проверку нормоконтроля.
+     * * @param string $text Содержимое .bib файла.
+     * @return array Результаты анализа: метрики, ошибки и вердикт по курсу.
      */
-    public function analyze($fileContent): array
+    public function analyze(string $text): array
     {
-        $rawResult = $this->runFullAnalysis($fileContent);
-        return $rawResult;
+        $rawBlocks = $this->splitIntoBlocks($text);
+        $parsedData = $this->parseBlocks($rawBlocks);
+        return $this->validateStandards($parsedData);
     }
 
-
-
     /**
-     * Адаптированный метод для Laravel
+     * Разрезает текст файла на отдельные блоки записей (от @ до конца блока).
+     * * @param string $text
+     * @return array Массив, где каждый элемент — массив строк одной записи.
      */
-    public function parseAndSave(BibFile $bibFile)
+    private function splitIntoBlocks(string $text): array
     {
-        $text = Storage::get($bibFile->path);
-        $rasb_text = $this->divisionBibFile($text);
+        $lines = explode("\n", $text);
+        $records = [];
+        $recordIndex = 0;
 
-        foreach ($rasb_text as $record_lines) {
-            // 1. Прогоняем твою логику проверки полей
-            $res = $this->proverkaZapisey($record_lines);
+        foreach ($lines as $lineNum => $line) {
+            $line = trim($line);
 
-            // 2. Вытаскиваем тип и ключ из первой найденной строки записи
-            $header = collect($res['zapis'])->firstWhere('type', '!=', null);
-
-            // 3. Собираем все поля в один массив для parsed_data
-            $fields = [];
-            foreach ($res['zapis'] as $line) {
-                if (isset($line['field'])) {
-                    $fields[$line['field']] = $line['value'];
-                }
+            // Пропуск комментариев BibTeX
+            if (empty($line) || str_starts_with($line, '%') || str_contains($line, '@comment')) {
+                continue;
             }
 
-            // 4. Сохраняем запись в БД
-            $entry = $bibFile->entries()->create([
-                'type'        => $header['type'] ?? 'unknown',
-                'cite_key'    => $header['key'] ?? 'no_key',
-                'raw_content' => implode("\n", $record_lines),
-                'parsed_data' => $fields,
-                'is_valid'    => empty($res['error']),
-            ]);
+            // Если строка начинается с @, значит началась новая запись
+            if (str_starts_with($line, '@')) {
+                $recordIndex++;
+            }
 
-            // 5. Если есть ошибки — сохраняем их в таблицу ошибок
-            if (!empty($res['error'])) {
-                foreach ($res['error'] as $errorMessage) {
-                    $entry->validationErrors()->create([
-                        'message'    => $errorMessage,
-                        'error_type' => 'syntax_or_gost', // Потом уточним типы
-                        'severity'   => 'critical',
-                    ]);
-                }
+            if ($recordIndex > 0) {
+                $records[$recordIndex][$lineNum] = $line;
             }
         }
-
-        $bibFile->update(['status' => 'completed']);
+        return $records;
     }
 
     /**
-     * Вспомогательный метод, выполняющий полный парсинг.
-     * @param string $text
-     * @return array
+     * Проводит синтаксическую проверку каждого блока записи.
+     * * @param array $rawBlocks
+     * @return array ['error' => [...], 'zapis' => [...]]
      */
-    private function runFullAnalysis(string $text): array
+    private function parseBlocks(array $rawBlocks): array
     {
-        // Выполняем все шаги парсинга
-        $rasb_text = $this->divisionBibFile($text);
-        $razb_zapis = $this->syntacticParsingBibFile($rasb_text);
+        $result = ['error' => [], 'zapis' => []];
 
-        // Передаем разобранные записи в функцию проверки
-        $result = $this->proverka_na_kafedru($razb_zapis);
+        foreach ($rawBlocks as $lines) {
+            $report = $this->parseEntry($lines);
 
+            if (!empty($report['error'])) {
+                $result['error'] = array_merge($result['error'], $report['error']);
+            }
+            if (!empty($report['zapis'])) {
+                $result['zapis'][] = $report['zapis'];
+            }
+        }
         return $result;
     }
 
-
     /**
-     * Перенесенный и немного адаптированный код divisionBibFile.
+     * Разбирает структуру конкретной записи: тип, ключ и поля.
+     * Проверяет наличие обязательных полей согласно BIBTEX_DB_TYPES.
      */
-    private function divisionBibFile(string $text): array
+    private function parseEntry(array $recordLines): array
     {
-        // ... Здесь код вашей функции divisionBibFile ...
-        // Не забудьте заменить все вызовы глобальной функции на $this->
-        $arrayText = explode("\n", $text);
-        $array = array();
-        $numNote = 0;
-        foreach ($arrayText as $key => $value) {
-            $num = 0;
-            $value = trim($value);
-            if (substr($value, 0, 1) === '%') {
-                continue;
-            }
-            // Пропуск блочного комментария @comment{...} (добавлено для полноты)
-            if (str_contains($value, '@comment{')) {
-                continue;
-            }
-            while ($num < strlen($value)) {
-                if ($value[$num] == '@' && strtolower(substr($value, $num, 8)) !== '@comment') {
-                    $numNote++;
-                }
-                if ($numNote > 0) { // Только если мы внутри записи
-                    if (!isset($array[$numNote][$key])) {
-                        $array[$numNote][$key] = '';
-                    }
-                    $array[$numNote][$key] .= $value[$num];
-                }
-                $num++;
-            }
+        $errors      = [];
+        $parsedEntry = [];
+        $foundFields = [];
+
+        if (empty($recordLines)) {
+            return ['error' => ["ОШИБКА: Пустой блок."], 'zapis' => []];
         }
-        return $array;
-    }
 
-    /**
-     * Перенесенный код syntacticParsingBibFile.
-     */
-    private function syntacticParsingBibFile(array $rasb_text): array
-    {
-        $errorArray = ['error' => [], 'zapis' => []];
-        foreach ($rasb_text as $block_index => $record_lines) {
-            $res = $this->proverkaZapisey($record_lines);
-            if (!empty($res['error'])) {
-                // Сохраняем ошибки, чтобы потом их вернуть
-                $errorArray['error'] = array_merge($errorArray['error'], $res['error']);
-            }
-            if (!empty($res['zapis'])) {
-                // Сохраняем корректно разобранные записи
-                $errorArray['zapis'][] = $res['zapis'];
-            }
-        }
-        return $errorArray;
-    }
+        // 1. Парсинг заголовка (тип и уникальный ключ)
+        $lineKeys = array_keys($recordLines);
+        $firstLine = $recordLines[$lineKeys[0]];
 
-    /**
-     * Перенесенный код proverkaZapisey, использующий константу.
-     */
-    private function proverkaZapisey(array $record_lines): array
-    {
-        // Заменили global $BIBTEX_DB_TYPES; на $this::BIBTEX_DB_TYPES
-        $BIBTEX_DB_TYPES = $this::BIBTEX_DB_TYPES;
-
-        $errors = [];
-        $records = [];
-        $found_fields = []; // Для хранения имен найденных полей (для проверки обязательных)
-        $record_type = '';
-        $record_line_key = 0; // Номер строки, где найден тип записи
-        $is_valid = true;
-
-        // Проверка наличия строк
-        if (empty($record_lines)) {
+        // Регулярка извлекает: 1 - тип (article), 2 - ключ (ivanov123)
+        if (preg_match('/@(\w+)\s*\{\s*([^,]+)/i', $firstLine, $matches)) {
+            $recordType = strtolower($matches[1]);
+            $headerLineKey = $lineKeys[0];
+            $parsedEntry[$headerLineKey] = ['type' => $recordType, 'key' => $matches[2]];
+        } else {
             return [
-                'error' => ["ОШИБКА: Передан пустой блок записи."],
+                'error' => ["ОШИБКА (Строка {$lineKeys[0]}): Неверный формат заголовка '@type{key,'"],
                 'zapis' => []
             ];
         }
 
-        // --- 1. Обработка первой строки (Заголовок)
-        $keys = array_keys($record_lines);
-        $first_line_key = $keys[0]; // Ключ первой строки (ее номер)
-        $trimmed_line = trim($record_lines[$first_line_key]);
+        // 2. Парсинг полей (key = {value})
+        foreach ($recordLines as $lineKey => $line) {
+            if ($lineKey === $headerLineKey || $line === '}' || empty($line)) continue;
 
-        // Проверка начала: Должно начинаться с '@'
-        if (empty($trimmed_line) || $trimmed_line[0] !== '@') {
-            $errors[$first_line_key] = "ОШИБКА (Строка {$first_line_key}): Запись не начинается с символа '@'. Строка: '{$trimmed_line}'";
-            $is_valid = false;
-        }
+            // Извлекаем имя поля и его значение
+            if (preg_match('/\s*(\w+)\s*=\s*(.*)/i', $line, $matches)) {
+                $fieldName = strtolower($matches[1]);
+                $rawValue = rtrim($matches[2], ',');
 
-        // Проверка структуры и извлечение типа/ключа
-        if ($is_valid) {
-            // Шаблон: /@(\w+)\s*\{\s*([^,]+)/
-            if (preg_match('/@(\w+)\s*\{\s*([^,]+)/i', $trimmed_line, $matches)) {
-                // $matches[1] = тип, $matches[2] = ключ
-                $record_type = strtolower($matches[1]);
-                $record_line_key = $first_line_key;
-                $records[$first_line_key] = [
-                    'type' => $record_type,
-                    'key' => $matches[2]
-                ];
-            } else {
-                $errors[$first_line_key] = "ОШИБКА (Строка {$first_line_key}): Не удалось разобрать тип и ключ записи. Строка: '{$trimmed_line}'";
-                $is_valid = false;
+                // Очистка от обрамляющих {}, "" или ''
+                $cleanValue = preg_replace('/^[\{\"\']|[\}\"\']$/u', '', $rawValue);
+
+                $foundFields[$fieldName] = true;
+                $parsedEntry[$lineKey] = ['field' => $fieldName, 'value' => $cleanValue];
+
+                // Проверка на пропущенную запятую в конце (кроме последней строки перед })
+                if (!str_ends_with(trim($line), ',') && !str_ends_with(trim($line), '}')) {
+                    $errors[] = "СИНТАКСИС (Строка $lineKey): Возможно, пропущена запятая в конце строки.";
+                }
             }
         }
 
-        // Если заголовок невалиден, возвращаем только ошибки
-        if (!$is_valid) {
-            // Очищаем записи, так как заголовок не был корректно разобран
-            return ['error' => $errors, 'zapis' => []];
+        // 3. Валидация состава полей
+        if (isset(self::BIBTEX_DB_TYPES[$recordType])) {
+            $required = self::BIBTEX_DB_TYPES[$recordType];
+
+            // Проверка отсутствующих полей
+            foreach ($required as $reqField) {
+                if (!isset($foundFields[$reqField])) {
+                    $errors[] = "ОШИБКА (Строка $headerLineKey): У '@$recordType' отсутствует обязательное поле '$reqField'.";
+                }
+            }
+
+            // --- НОВАЯ ПРОВЕРКА НА ЯЗЫК ---
+            // Проверяем, есть ли ХОТЯ БЫ ОДНО из полей языка
+            $hasLanguage = isset($foundFields['language']) ||
+                isset($foundFields['langid']) ||
+                isset($foundFields['hyphenation']);
+
+            if (!$hasLanguage) {
+                // Мы добавляем это как ПРЕДУПРЕЖДЕНИЕ, чтобы не блокировать всё,
+                // но намекнуть пользователю, что для ГОСТ это важно.
+                $errors[] = "ПРЕДУПРЕЖДЕНИЕ (Строка $headerLineKey): Для корректного оформления по ГОСТ рекомендуется добавить поле 'language' или 'langid'.";
+            }
+
+
+
+            // Проверка лишних полей
+            foreach ($foundFields as $fName => $_) {
+                if (in_array($fName, ['language', 'langid', 'hyphenation'])) continue;
+
+                if (!in_array($fName, $required)) {
+                    $errors[] = "ПРЕДУПРЕЖДЕНИЕ (Строка $headerLineKey): Поле '$fName' не входит в стандарт для '@$recordType'.";
+                }
+            }
+        } else {
+            $errors[] = "ВНИМАНИЕ (Строка $headerLineKey): Неизвестный тип записи '@$recordType'.";
         }
 
-        // --- 2. Построчная проверка остальных полей
-        $num_lines = count($keys);
+        return ['error' => $errors, 'zapis' => $parsedEntry];
+    }
 
-        for ($i = 1; $i < $num_lines; $i++) {
-            $current_key = $keys[$i];
-            $current_line = trim($record_lines[$current_key]);
+    /**
+     * Сопоставляет статистику записей с требованиями учебных курсов из БД.
+     */
+    private function validateStandards(array $parsedData): array
+    {
+        $requirements = CourseRequirement::orderBy('course_number', 'desc')->get();
+        $metrics = $this->calculateMetrics($parsedData['zapis']);
 
-            // Игнорируем пустые строки и комментарии
-            if (empty($current_line) || strpos($current_line, '%') === 0) {
-                continue;
+        $verdict = 'Не соответствует требованиям кафедры';
+        $bestMatch = ['course' => null, 'passed' => -1];
+
+        foreach ($requirements as $req) {
+            $passedCount = 0;
+            $checks = [
+                $metrics['totalQuantity'] >= $req->min_total_quantity,
+                $metrics['amountOfLiteratureInForeignLanguages'] >= $req->min_foreign_lang,
+                $metrics['numberOfCurrentScientificPeriodicals'] >= $req->min_current_periodicals,
+                $metrics['Literature21Century'] >= $req->min_21st_century
+            ];
+
+            $passedCount = count(array_filter($checks));
+
+            if ($passedCount === count($checks)) {
+                $verdict = "Полностью соответствует требованиям курса **{$req->course_number}**.";
+                break;
             }
 
-            // Обработка закрывающей скобки '}'
-            if ($current_line === '}') {
-                // Проверка, что после '}' нет мусора
-                $i++; // переходим к следующей строке
-                while ($i < $num_lines) {
-                    $extra_line = trim($record_lines[$keys[$i]]);
-                    if (!empty($extra_line) && strpos($extra_line, '%') !== 0) {
-                        $errors[$keys[$i]] = "ОШИБКА (Строка {$keys[$i]}): НАЙДЕН МУСОР В ЗАПИСИ после закрывающей скобки: '{$extra_line}'";
-                    }
-                    $i++;
-                }
-                break; // Выход из цикла, парсинг записи завершен
-            }
-
-            // Извлечение типа поля и значения
-            // Шаблон: /\s*(\w+)\s*=\s*(.*)/
-            if (preg_match('/\s*(\w+)\s*=\s*(.*)/i', $current_line, $matches)) {
-                $field_name = strtolower($matches[1]);
-                $field_value_raw = $matches[2];
-
-                // Записываем имя найденного поля для финальной проверки
-                $found_fields[$field_name] = true;
-
-                // Удаляем запятую в конце значения, если она есть
-                $field_value = rtrim($field_value_raw, ',');
-
-                // Удаляем обрамляющие символы: кавычки ('/'/"), фигурные скобки ({})
-                // Проверяем первый и последний символы (используем mb_substr для корректной работы с кириллицей, если она там вдруг будет)
-                $first_char = mb_substr($field_value, 0, 1);
-                $last_char = mb_substr($field_value, -1);
-
-                if (($first_char === '\'' && $last_char === '\'') ||
-                    ($first_char === '"' && $last_char === '"') ||
-                    ($first_char === '{' && $last_char === '}')) {
-                    $field_value = mb_substr($field_value, 1, -1);
-                }
-
-                $records[$current_key] = [
-                    'field' => $field_name,
-                    'value' => $field_value // значение без конечной запятой
-                ];
-
-                // Проверка завершения поля запятой (синтаксис BibTeX)
-                $ends_with_comma_in_line = (substr($current_line, -1) === ',');
-
-                if (!$ends_with_comma_in_line) {
-                    $next_key_index = $i + 1;
-                    $next_line_key = ($next_key_index < $num_lines) ? $keys[$next_key_index] : null;
-                    $next_line = $next_line_key !== null ? trim($record_lines[$next_line_key]) : '';
-
-                    // Следующая строка - это завершитель записи: '}' или просто ','
-                    $next_is_terminator = ($next_line === '}' || $next_line === ',');
-
-                    // Если поле не заканчивается на запятую, и следующая не '}' или ',' - это ошибка
-                    if (!$next_is_terminator) {
-                        $errors[$keys[$i]] = "ОШИБКА (Строка {$current_key}): Поле не завершено запятой (',') и следующая строка не является '}' или ','. Строка: '{$current_line}'";
-                        // Оставляем $is_valid = true, чтобы продолжить сбор полей, несмотря на синтаксическую ошибку
-                    }
-                }
-
-            } elseif ($current_line !== ',') {
-                // Мусорные строки (не поля, не запятые, не '}')
-                $errors[$keys[$i]] = "ПРЕДУПРЕЖДЕНИЕ (Строка {$current_key}): Строка не распознана как поле, ',' или '}'. Строка: '{$current_line}'";
-            }
-        }
-
-        // --- 3. ФИНАЛЬНАЯ ПРОВЕРКА ОБЯЗАТЕЛЬНЫХ ПОЛЕЙ ---
-
-        if (!empty($record_type)) {
-            if (isset($BIBTEX_DB_TYPES[$record_type])) {
-                $required_fields = $BIBTEX_DB_TYPES[$record_type];
-
-                // echo "required_fields: \n";
-                // print_r ($required_fields);
-                // echo "found_fields: \n";
-                // print_r ($found_fields);
-
-                foreach ($required_fields as $required_field) {
-                    // Проверяем, было ли найдено обязательное поле
-                    if (!isset($found_fields[$required_field])) {
-                        $errors[] = "ОШИБКА (Строка {$record_line_key}): Тип '@{$record_type}' требует обязательное поле '{$required_field}', но оно отсутствует.";
-                    }
-                }
-                foreach ($found_fields as $field=>$true) {
-                    if (!in_array($field, $required_fields)) {
-                        $errors[] = "ОШИБКА (Строка {$record_line_key}): Тип '@{$record_type}' имеет лишнее поле '{$field}'";
-                    }
-                }
-            } else {
-                // Ошибка: Неизвестный тип записи
-                $errors[] = "ПРЕДУПРЕЖДЕНИЕ (Строка {$record_line_key}): Тип записи '@{$record_type}' не найден в списке известных типов BibTeX.";
+            if ($passedCount > $bestMatch['passed']) {
+                $bestMatch = ['course' => $req->course_number, 'passed' => $passedCount];
             }
         }
 
         return [
-            // Возвращаем собранные ошибки (переиндексируем)
-            'error' => array_values($errors),
-            // Возвращаем все разобранные данные записи (заголовок + поля)
-            'zapis' => $records
+            'aggregated_metrics' => $metrics,
+            'errors' => $parsedData['error'],
+            'course_comparison_result' => $verdict,
         ];
     }
 
     /**
-     * Реструктурированная proverka_na_kafedru для использования Eloquent (DB).
+     * Считает статистические показатели (иностранные языки, периодика, год издания).
      */
-    private function proverka_na_kafedru(array $razb_zapis): array
+    private function calculateMetrics(array $entries): array
     {
-        // Загрузка требований из БД
-        // Сортируем по убыванию курса, чтобы сначала проверять самые строгие требования
-        $requirements = CourseRequirement::orderBy('course_number', 'desc')->get();
-
-        // ... Здесь код подсчета метрик, который был в вашей оригинальной функции ...
-        $metrics = $this->calculateMetrics($razb_zapis['zapis']);
-
-        // --- Сравнение с требованиями ---
-        $result_course = 'Не соответствует ни одному курсу';
-        $best_fit_course_data = ['course' => null, 'passed' => -1, 'total' => 0];
-
-        foreach ($requirements as $req) {
-            $passed_criteria = 0;
-            $total_criteria = 0;
-            $is_passed = true;
-
-            // Преобразование требований из Eloquent-объекта в массив
-            $req_array = [
-                'totalQuantity' => $req->min_total_quantity,
-                'amountOfLiteratureInForeignLanguages' => $req->min_foreign_lang,
-                'numberOfCurrentScientificPeriodicals' => $req->min_current_periodicals,
-                'Literature21Century' => $req->min_21st_century,
-            ];
-
-            foreach ($req_array as $metric_name => $min_value) {
-                if ($min_value === null) continue; // Пропускаем, если поле не задано
-                $total_criteria++;
-
-                // Сравнение с фактическими метриками
-                if (isset($metrics[$metric_name]) && $metrics[$metric_name] >= $min_value) {
-                    $passed_criteria++;
-                } else {
-                    $is_passed = false;
-                }
-            }
-
-            if ($is_passed) {
-                $result_course = "Полностью соответствует требованиям курса **{$req->course_number}**.";
-                break; // Нашли максимальное соответствие
-            }
-
-            if ($passed_criteria > $best_fit_course_data['passed']) {
-                $best_fit_course_data = [
-                    'course' => $req->course_number,
-                    'passed' => $passed_criteria,
-                    'total' => $total_criteria
-                ];
-            }
-        }
-
-        if ($result_course === 'Не соответствует ни одному курсу' && $best_fit_course_data['course'] !== null) {
-            $course_num = $best_fit_course_data['course'];
-            $passed = $best_fit_course_data['passed'];
-            $total = $best_fit_course_data['total'];
-            $result_course = "Не соответствует полным требованиям, но максимально близок к **{$course_num}** курсу ({$passed} из {$total} требований выполнено).";
-        }
-
-        // Возвращаем чистый структурированный массив данных
-        return [
-            'aggregated_metrics' => $metrics,
-            'errors' => $razb_zapis['error'],
-            'course_comparison_result' => $result_course,
-        ];
-    }
-
-    // Вспомогательный метод для подсчета метрик
-    private function calculateMetrics(array $recordBlocks): array
-    {
-        $metrics = [
+        $stats = [
             'totalQuantity' => 0,
             'amountOfLiteratureInForeignLanguages' => 0,
             'numberOfCurrentScientificPeriodicals' => 0,
             'Literature21Century' => 0,
         ];
-        $periodical_types = ['article', 'inproceedings', 'incollection'];
 
-        foreach ($recordBlocks as $record_block) {
-            $record_type = '';
-            $record_fields = [];
+        foreach ($entries as $entry) {
+            $type = '';
+            $fields = [];
 
-            foreach ($record_block as $line_data) {
-                if (isset($line_data['type'])) {
-                    $record_type = $line_data['type'];
-                } elseif (isset($line_data['field'])) {
-                    $record_fields[$line_data['field']] = $line_data['value'];
-                }
+            foreach ($entry as $data) {
+                if (isset($data['type'])) $type = $data['type'];
+                if (isset($data['field'])) $fields[$data['field']] = $data['value'];
             }
 
-            if (!empty($record_type)) {
-                $metrics['totalQuantity']++;
-            } else {
-                continue;
+            if (!$type) continue;
+            $stats['totalQuantity']++;
+
+            // Считаем английские источники (по полю hyphenation)
+            $stats['amountOfLiteratureInForeignLanguages'] += $this->isForeignLanguage($fields);
+
+            // Статьи и конференции считаем периодикой
+            if (in_array($type, ['article', 'inproceedings', 'incollection'])) {
+                $stats['numberOfCurrentScientificPeriodicals']++;
             }
 
-            if (isset($record_fields['hyphenation']) && strtolower($record_fields['hyphenation']) === 'english') {
-                $metrics['amountOfLiteratureInForeignLanguages']++;
-            }
-
-            if (in_array($record_type, $periodical_types)) {
-                $metrics['numberOfCurrentScientificPeriodicals']++;
-            }
-
-            if (isset($record_fields['year'])) {
-                $year = (int)filter_var($record_fields['year'], FILTER_SANITIZE_NUMBER_INT);
-                if ($year >= 2001) {
-                    $metrics['Literature21Century']++;
-                }
+            // Проверка на 21 век (>= 2001 год)
+            if (isset($fields['year'])) {
+                $year = (int) preg_replace('/[^0-9]/', '', $fields['year']);
+                if ($year >= 2001) $stats['Literature21Century']++;
             }
         }
-        return $metrics;
+
+        return $stats;
+    }
+
+    public function isForeignLanguage(array $fields): int
+    {
+        $hyphenation = strtolower($fields['hyphenation'] ?? '');
+        $title = $fields['title'] ?? '';
+
+        // Если явно указано 'russian', то это точно не иностранный
+        if (in_array($hyphenation, ['russian', 'russia', 'rus'])) {
+            return 0;
+        }
+
+        // Если поле $title пустое или содержит что-то другое,
+        if ($title === '') {
+            return 0;
+        }
+
+        // Проверка на отсутствие кириллицы
+        if (preg_match('/[а-яё]/iu', $title)) {
+            return 0; // Русских букв нет -> иностранный
+        }
+
+        // Если не русский, то иностранный
+        if ($hyphenation !== '') {
+            return 1;
+        }
+
+
+
+        return 0; // Нашли русские буквы -> отечественный
     }
 }
