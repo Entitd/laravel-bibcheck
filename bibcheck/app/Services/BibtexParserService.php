@@ -128,39 +128,30 @@ class BibtexParserService
         $lineKeys = array_keys($recordLines);
         $firstLineKey = $lineKeys[0];
 
-        // 1. Заголовок (теперь запятая после ключа необязательна для парсинга)
-        $firstLine = $recordLines[$firstLineKey];
-        $header = $this->extractHeader($firstLine, $firstLineKey);
-
+        // 1. Заголовок
+        $header = $this->extractHeader($recordLines[$firstLineKey], $firstLineKey);
         if (isset($header['error'])) return ['error' => [$header['error']], 'zapis' => []];
 
-        // Проверка на пропущенную запятую в заголовке
         if (!str_contains($header['full_match'], ',')) {
-            $errors[] = "СИНТАКСИС (Строка $firstLineKey): Пропущена запятая после ключа '{$header['key']}'.";
+            $errors[] = "СИНТАКСИС (Строка $firstLineKey): Пропущена запятая после ключа записи.";
         }
 
         $parsedEntry[$firstLineKey][] = ['type' => $header['type'], 'key' => $header['key']];
 
-        // 2. Создание буфера и карты строк
+        // 2. Буфер
         $buffer = "";
         $lineMap = [];
         foreach ($recordLines as $lineKey => $line) {
-            $text = ($lineKey === $firstLineKey)
-                ? substr($line, strlen($header['full_match']))
-                : $line;
-
+            $text = ($lineKey === $firstLineKey) ? substr($line, strlen($header['full_match'])) : $line;
             $startPos = strlen($buffer);
             $buffer .= $text . " ";
             $endPos = strlen($buffer);
-
-            for ($i = $startPos; $i < $endPos; $i++) {
-                $lineMap[$i] = $lineKey;
-            }
+            for ($i = $startPos; $i < $endPos; $i++) { $lineMap[$i] = $lineKey; }
         }
 
-        // 3. СУПЕР-РЕГУЛЯРКА для полей
-        // Она ищет ключ, а затем захватывает значение, балансируя между скобками
-        // или останавливаясь перед следующим полем.
+        // 3. Бронебойная регулярка
+        // Группа 1: (\w+) - имя поля
+        // Группа 2: захватывает либо {..}, либо "..", либо текст до следующего поля
         preg_match_all('/(\w+)\s*=\s*(\{.*?\}|".*?"|[^{},\s][^=]*(?=\s*,\s*\w+\s*=|\s*\}|$))/su', $buffer, $matches, PREG_SET_ORDER | PREG_OFFSET_CAPTURE);
 
         $lastMatchEnd = 0;
@@ -169,22 +160,30 @@ class BibtexParserService
             $fieldValueRaw = trim($match[2][0]);
             $fieldOffset = $match[0][1];
             $fieldEnd = $fieldOffset + strlen($match[0][0]);
-
             $currentLine = $lineMap[$fieldOffset] ?? $firstLineKey;
 
-            // Чистим внешние скобки/кавычки, если они есть
-            $cleanValue = preg_replace('/^\{|\}$|^\"|\"$/u', '', $fieldValueRaw);
+            // --- ЛОГИКА ПРОВЕРКИ СКОБОК И КАВЫЧЕК ---
+            $cleanValue = $fieldValueRaw;
 
-            // Проверка на твой случай: author=Value} (пропущена открывающая скобка)
-            if (str_ends_with($fieldValueRaw, '}') && !str_starts_with($fieldValueRaw, '{')) {
+            // Проверка на кавычки без пары (твой случай: author=Name")
+            if (str_ends_with($fieldValueRaw, '"') && !str_starts_with($fieldValueRaw, '"')) {
+                $errors[] = "СИНТАКСИС (Строка $currentLine): У поля '$fieldName' есть закрывающая кавычка, но нет открывающей.";
+                $cleanValue = rtrim($cleanValue, '"');
+            }
+            // Проверка на фигурные скобки без пары (author=Name})
+            elseif (str_ends_with($fieldValueRaw, '}') && !str_starts_with($fieldValueRaw, '{')) {
                 $errors[] = "СИНТАКСИС (Строка $currentLine): У поля '$fieldName' есть закрывающая скобка, но нет открывающей.";
                 $cleanValue = rtrim($cleanValue, '}');
+            }
+            else {
+                // Если всё нормально, просто чистим стандартно
+                $cleanValue = preg_replace('/^\{|\}$|^\"|\"$/u', '', $fieldValueRaw);
             }
 
             $foundFields[$fieldName] = true;
             $parsedEntry[$currentLine][] = ['field' => $fieldName, 'value' => trim($cleanValue)];
 
-            // 4. Проверка запятой между полями
+            // 4. Проверка запятой
             if ($lastMatchEnd > 0) {
                 $gap = substr($buffer, $lastMatchEnd, $fieldOffset - $lastMatchEnd);
                 if (!str_contains($gap, ',')) {
