@@ -17,14 +17,9 @@ class BibtexParserTest extends TestCase
         // Передаем статью БЕЗ автора (author - обязателен в твоем массиве)
         $badBib = "
 
-            @article{bephy,
-              title={фывфывф},
-              author={Beebe, Nelson HF},
-              journal={TUGBoat},
-              volume={14},
-              number={4},
+            @article{bephy title={фывфывф},author=Beebe, Nelson HF},journal={TUGBoat} volume={14} number={4}
               pages={395--419},
-              hyphenation = { },
+              hyphenation = {english},
               year={1993}
             }
         ";

@@ -76,23 +76,23 @@ class BibtexParserService
     {
         $lines = explode("\n", $text);
         $records = [];
-        $recordIndex = 0;
+        $recordIndex = -1;
 
         foreach ($lines as $lineNum => $line) {
-            $line = trim($line);
+            $trimmedLine = trim($line);
 
-            // Пропуск комментариев BibTeX
-            if (empty($line) || str_starts_with($line, '%') || str_contains($line, '@comment')) {
+            if (empty($trimmedLine) || str_starts_with($trimmedLine, '%') || str_contains($trimmedLine, '@comment')) {
                 continue;
             }
 
-            // Если строка начинается с @, значит началась новая запись
-            if (str_starts_with($line, '@')) {
+            // Новая запись начинается здесь
+            if (str_starts_with($trimmedLine, '@')) {
                 $recordIndex++;
             }
 
-            if ($recordIndex > 0) {
-                $records[$recordIndex][$lineNum] = $line;
+            // Собираем только если мы уже внутри какой-то записи
+            if ($recordIndex >= 0) {
+                $records[$recordIndex][$lineNum] = $trimmedLine;
             }
         }
         return $records;
@@ -106,9 +106,8 @@ class BibtexParserService
     private function parseBlocks(array $rawBlocks): array
     {
         $result = ['error' => [], 'zapis' => []];
-
-        foreach ($rawBlocks as $lines) {
-            $report = $this->parseEntry($lines);
+        foreach ($rawBlocks as $block) {
+            $report = $this->parseEntry($block);
 
             if (!empty($report['error'])) {
                 $result['error'] = array_merge($result['error'], $report['error']);
@@ -120,97 +119,215 @@ class BibtexParserService
         return $result;
     }
 
-    /**
-     * Разбирает структуру конкретной записи: тип, ключ и поля.
-     * Проверяет наличие обязательных полей согласно BIBTEX_DB_TYPES.
-     */
     private function parseEntry(array $recordLines): array
     {
-        $errors      = [];
+        $errors = [];
         $parsedEntry = [];
         $foundFields = [];
 
-        if (empty($recordLines)) {
-            return ['error' => ["ОШИБКА: Пустой блок."], 'zapis' => []];
+        $lineKeys = array_keys($recordLines);
+        $firstLineKey = $lineKeys[0];
+
+        $header = $this->extractHeader($recordLines[$firstLineKey], $firstLineKey);
+        if (isset($header['error'])) return ['error' => [$header['error']], 'zapis' => []];
+
+        // ПРОВЕРКА: А была ли запятая в заголовке?
+        if (!str_contains($header['full_match'], ',')) {
+            $errors[] = "СИНТАКСИС (Строка $firstLineKey): Пропущена запятая после ключа записи '{$header['key']}'.";
         }
 
-        // 1. Парсинг заголовка (тип и уникальный ключ)
-        $lineKeys = array_keys($recordLines);
-        $firstLine = $recordLines[$lineKeys[0]];
+        $recordType = $header['type'];
+        $parsedEntry[$firstLineKey][] = ['type' => $recordType, 'key' => $header['key']];
 
-        // Регулярка извлекает: 1 - тип (article), 2 - ключ (ivanov123)
-        if (preg_match('/@(\w+)\s*\{\s*([^,]+)/i', $firstLine, $matches)) {
-            $recordType = strtolower($matches[1]);
-            $headerLineKey = $lineKeys[0];
-            $parsedEntry[$headerLineKey] = ['type' => $recordType, 'key' => $matches[2]];
-        } else {
+        $buffer = "";
+        $lineMap = [];
+
+        foreach ($recordLines as $lineKey => $line) {
+            $textToProcess = $line;
+
+            if ($lineKey === $firstLineKey) {
+                // Отрезаем именно то, что нашла регулярка заголовка
+                $textToProcess = substr($line, strlen($header['full_match']));
+            }
+
+            $trimmed = trim($textToProcess);
+            if ($trimmed === '}' || empty($trimmed)) continue;
+
+            $startPos = strlen($buffer);
+            $buffer .= $textToProcess . " ";
+            $endPos = strlen($buffer);
+
+            for ($i = $startPos; $i < $endPos; $i++) {
+                $lineMap[$i] = $lineKey;
+            }
+        }
+
+        // 3. Универсальный поиск полей: ключ = {значение} ИЛИ ключ = "значение" ИЛИ ключ = значение
+        preg_match_all('/(\w+)\s*=\s*(\{.*?\}|".*?"|[^{},\s][^,]*)/su', $buffer, $matches, PREG_SET_ORDER | PREG_OFFSET_CAPTURE);
+
+        var_dump($matches);
+
+        $lastMatchEnd = 0;
+
+        foreach ($matches as $match) {
+            $fieldName = strtolower($match[1][0]);
+            $fieldValueRaw = $match[2][0];
+            $fieldOffset = $match[0][1];
+            $fieldEnd = $fieldOffset + strlen($match[0][0]);
+
+            // Определяем строку по позиции первого символа поля в буфере
+            $currentLine = $lineMap[$fieldOffset] ?? $firstLineKey;
+
+            // Очищаем значение от скобок и кавычек
+            $cleanValue = trim($fieldValueRaw, " \t\n\r\0\x0B{},\"");
+
+            $foundFields[$fieldName] = true;
+
+            // Добавляем поле в массив полей для данной строки
+            $parsedEntry[$currentLine][] = ['field' => $fieldName, 'value' => $cleanValue];
+
+            // 4. Проверка пропущенных запятых (анализ промежутков между полями)
+            if ($lastMatchEnd > 0) {
+                $gap = substr($buffer, $lastMatchEnd, $fieldOffset - $lastMatchEnd);
+                if (!str_contains($gap, ',')) {
+                    // Если запятой нет, ругаемся на строку, где закончилось предыдущее поле
+                    $errorLine = $lineMap[$lastMatchEnd - 1] ?? $currentLine;
+                    $errors[] = "СИНТАКСИС (Строка $errorLine): Пропущена запятая перед полем '$fieldName'.";
+                }
+            }
+
+            $lastMatchEnd = $fieldEnd;
+        }
+
+        // 5. Бизнес-валидация (обязательные поля, ГОСТ и т.д.)
+        $validationErrors = $this->validateEntry($recordType, $foundFields, $firstLineKey);
+
+        return [
+            'error' => array_merge($errors, $validationErrors),
+            'zapis' => $parsedEntry
+        ];
+    }
+
+
+    /**
+     * Разбор заголовка записи
+     */
+    private function extractHeader(string $line, int $lineKey): array
+    {
+        // Запятая теперь опциональна (\s*,?\s*)
+        if (preg_match('/@(\w+)\s*\{\s*([^,\s\}]+)\s*,?\s*/i', $line, $matches)) {
             return [
-                'error' => ["ОШИБКА (Строка {$lineKeys[0]}): Неверный формат заголовка '@type{key,'"],
-                'zapis' => []
+                'type' => strtolower($matches[1]),
+                'key'  => trim($matches[2]),
+                'full_match' => $matches[0] // Сохраняем, чтобы точно знать, что отрезать
             ];
         }
-
-        // 2. Парсинг полей (key = {value})
-        foreach ($recordLines as $lineKey => $line) {
-            if ($lineKey === $headerLineKey || $line === '}' || empty($line)) continue;
-
-            // Извлекаем имя поля и его значение
-            if (preg_match('/\s*(\w+)\s*=\s*(.*)/i', $line, $matches)) {
-                $fieldName = strtolower($matches[1]);
-                $rawValue = rtrim($matches[2], ',');
-
-                // Очистка от обрамляющих {}, "" или ''
-                $cleanValue = preg_replace('/^[\{\"\']|[\}\"\']$/u', '', $rawValue);
-
-                $foundFields[$fieldName] = true;
-                $parsedEntry[$lineKey] = ['field' => $fieldName, 'value' => $cleanValue];
-
-                // Проверка на пропущенную запятую в конце (кроме последней строки перед })
-                if (!str_ends_with(trim($line), ',') && !str_ends_with(trim($line), '}')) {
-                    $errors[] = "СИНТАКСИС (Строка $lineKey): Возможно, пропущена запятая в конце строки.";
-                }
-            }
-        }
-
-        // 3. Валидация состава полей
-        if (isset(self::BIBTEX_DB_TYPES[$recordType])) {
-            $required = self::BIBTEX_DB_TYPES[$recordType];
-
-            // Проверка отсутствующих полей
-            foreach ($required as $reqField) {
-                if (!isset($foundFields[$reqField])) {
-                    $errors[] = "ОШИБКА (Строка $headerLineKey): У '@$recordType' отсутствует обязательное поле '$reqField'.";
-                }
-            }
-
-            // --- НОВАЯ ПРОВЕРКА НА ЯЗЫК ---
-            // Проверяем, есть ли ХОТЯ БЫ ОДНО из полей языка
-            $hasLanguage = isset($foundFields['language']) ||
-                isset($foundFields['langid']) ||
-                isset($foundFields['hyphenation']);
-
-            if (!$hasLanguage) {
-                // Мы добавляем это как ПРЕДУПРЕЖДЕНИЕ, чтобы не блокировать всё,
-                // но намекнуть пользователю, что для ГОСТ это важно.
-                $errors[] = "ПРЕДУПРЕЖДЕНИЕ (Строка $headerLineKey): Для корректного оформления по ГОСТ рекомендуется добавить поле 'language' или 'langid'.";
-            }
-
-
-
-            // Проверка лишних полей
-            foreach ($foundFields as $fName => $_) {
-                if (in_array($fName, ['language', 'langid', 'hyphenation'])) continue;
-
-                if (!in_array($fName, $required)) {
-                    $errors[] = "ПРЕДУПРЕЖДЕНИЕ (Строка $headerLineKey): Поле '$fName' не входит в стандарт для '@$recordType'.";
-                }
-            }
-        } else {
-            $errors[] = "ВНИМАНИЕ (Строка $headerLineKey): Неизвестный тип записи '@$recordType'.";
-        }
-
-        return ['error' => $errors, 'zapis' => $parsedEntry];
+        return ['error' => "ОШИБКА (Строка $lineKey): Неверный формат заголовка. Ожидается '@type{key,'"];
     }
+
+    /**
+     * Разбор отдельной строки поля (author = {Ivanov})
+     */
+    private function extractField(string $line): ?array
+    {
+        if (preg_match('/\s*(\w+)\s*=\s*(.*)/i', $line, $matches)) {
+            return [
+                'name'  => strtolower($matches[1]),
+                'value' => preg_replace('/^[\{\"\']|[\}\"\']$/u', '', rtrim($matches[2], ','))
+            ];
+        }
+        return null;
+    }
+
+    /**
+     * Проверка синтаксического завершения строки
+     */
+    private function hasProperEnding(string $line): bool
+    {
+        $trimmed = trim($line);
+        return str_ends_with($trimmed, ',');
+//        return str_ends_with($trimmed, ',') || str_ends_with($trimmed, '}');
+
+    }
+
+    /**
+     * Большая валидация полей и требований ГОСТ
+     */
+    private function validateEntry(string $type, array $foundFields, int $headerLine): array
+    {
+        $errors = [];
+        $rules = self::BIBTEX_DB_TYPES[$type] ?? null;
+
+        if (!$rules) {
+            return ["ВНИМАНИЕ (Строка $headerLine): Неизвестный тип записи '@$type'."];
+        }
+
+        // Проверка обязательных полей
+        foreach ($rules as $reqField) {
+            if (!isset($foundFields[$reqField])) {
+                $errors[] = "ОШИБКА (Строка $headerLine): У '@$type' отсутствует обязательное поле '$reqField'.";
+            }
+        }
+
+        // Проверка на язык (Важно для ГОСТ)
+        $langFields = ['language', 'langid', 'hyphenation'];
+        $hasLanguage = (bool)array_intersect(array_keys($foundFields), $langFields);
+
+        if (!$hasLanguage) {
+            $errors[] = "ПРЕДУПРЕЖДЕНИЕ (Строка $headerLine): Для ГОСТ рекомендуется добавить 'language' или 'langid'.";
+        }
+
+        // Проверка лишних полей
+        foreach ($foundFields as $fName => $_) {
+            if (!in_array($fName, $rules) && !in_array($fName, $langFields)) {
+                $errors[] = "ПРЕДУПРЕЖДЕНИЕ (Строка $headerLine): Поле '$fName' не стандартно для '@$type'.";
+            }
+        }
+
+        return $errors;
+    }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
     /**
      * Сопоставляет статистику записей с требованиями учебных курсов из БД.
