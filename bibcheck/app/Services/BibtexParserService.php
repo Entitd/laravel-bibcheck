@@ -2,12 +2,23 @@
 
 namespace App\Services;
 
-use App\Models\BibFile;
-use App\Models\BibEntry;
-use App\Models\ValidationError;
+//use App\Models\BibFile;
+//use App\Models\BibEntry;
+//use App\Models\ValidationError;
 use App\Models\CourseRequirement;
-use Illuminate\Support\Facades\Storage;
-use Illuminate\Support\Facades\Log;
+//use Illuminate\Support\Facades\Storage;
+//use Illuminate\Support\Facades\Log;
+
+/**
+ * Осталось доделать:
+ *  - проверка на уникальность key
+ *  - формат поля АВТОРА
+ *  - разные форматы полей (например pages (--))
+ *  - надо сделать проверку на мусорные символы (ЭТО ПОСЛЕДНЕЕ ЧТО НАДО ДЕЛАТЬ)
+ *  - сделать проверку на что больше подходит источник исходя из полей (вдруг пользователь просто перепутал тип источника)
+ */
+
+
 
 /**
  * Сервис для парсинга, валидации и анализа BibTeX файлов.
@@ -63,10 +74,8 @@ class BibtexParserService
     public function analyze(string $text): array
     {
         $rawBlocks = $this->splitIntoBlocks($text);
-        $parsedData = $this->parseBlocks($rawBlocks);
-
-//        var_dump("parsedData");
-//        var_dump($parsedData);
+        $usedKeys = []; // Это для ключей @article{KEY,
+        $parsedData = $this->parseBlocks($rawBlocks, $usedKeys);
         return $this->validateStandards($parsedData);
     }
 
@@ -105,13 +114,14 @@ class BibtexParserService
     /**
      * Проводит синтаксическую проверку каждого блока записи.
      * * @param array $rawBlocks
+     * * @param array $usedKeys
      * @return array ['error' => [...], 'zapis' => [...]]
      */
-    private function parseBlocks(array $rawBlocks): array
+    private function parseBlocks(array $rawBlocks, array &$usedKeys): array
     {
         $result = ['error' => [], 'zapis' => []];
         foreach ($rawBlocks as $block) {
-            $report = $this->parseEntry($block);
+            $report = $this->parseEntry($block, $usedKeys);
 
             if (!empty($report['error'])) {
                 $result['error'] = array_merge($result['error'], $report['error']);
@@ -123,14 +133,41 @@ class BibtexParserService
         return $result;
     }
 
-    private function parseEntry(array $recordLines): array
+    private function parseEntry(array $recordLines, array &$usedKeys): array
     {
+
+        var_dump("usedKeys");
+        var_dump($usedKeys);
+
         $lineKeys = array_keys($recordLines);
         $firstLineKey = $lineKeys[0];
 
         // 1. Работаем с заголовком
         $header = $this->extractHeader($recordLines[$firstLineKey], $firstLineKey);
         if (isset($header['error'])) return ['error' => [$header['error']], 'zapis' => []];
+
+
+        $errors = [];
+
+        var_dump("header[key]");
+        var_dump($header['key']);
+
+        // --- ПРОВЕРКА НА УНИКАЛЬНОСТЬ KEY ---
+        $currentKey = isset($header['key']) ? $header['key'] : null;
+        if (isset($usedKeys[$currentKey])) {
+            $errors[] = [
+                'severity' => 'error',
+                'message'  => "Дублирующийся ключ записи '$currentKey'. Ранее использован на строке {$usedKeys[$currentKey]}.",
+                'line'     => $firstLineKey,
+                'column'   => $header['key_column'],
+                'length'   => strlen($currentKey)
+            ];
+        } else {
+            // Запоминаем строку первого появления ключа
+            $usedKeys[$currentKey] = $firstLineKey;
+        }
+        // ------------------------------------
+
 
         // 2. Подготавливаем плоский буфер и карту строк
         $prepared = $this->prepareBuffer($recordLines, $header, $firstLineKey);
@@ -161,7 +198,7 @@ class BibtexParserService
         ksort($zapis);
 
         return [
-            'error' => array_merge($fieldResults['errors'], $this->validateEntry($header['type'], $fieldResults['foundFields'], $firstLineKey)),
+            'error' => array_merge($errors, $fieldResults['errors'], $this->validateEntry($header['type'], $fieldResults['foundFields'], $firstLineKey)),
             'zapis' => $zapis
         ];
     }
@@ -221,6 +258,7 @@ class BibtexParserService
             }
             $column = ($fieldOffset - $lineStartPos) + 1;
 
+            var_dump($fieldName, $fieldValueRaw, $absoluteLine);
             $cleanData = $this->sanitizeFieldValue($fieldName, $fieldValueRaw, $absoluteLine);
 
             if ($cleanData['error']) {
@@ -285,18 +323,42 @@ class BibtexParserService
     /**
      * Разбор заголовка записи
      */
+//    private function extractHeader(string $line, int $lineKey): array
+//    {
+//        // Запятая теперь опциональна (\s*,?\s*)
+//        if (preg_match('/@(\w+)\s*\{\s*([^,\s\}]+)\s*,?\s*/i', $line, $matches)) {
+//            return [
+//                'type' => strtolower($matches[1]),
+//                'key'  => trim($matches[2]),
+////                'key_column'  => $matches[2][1] + 1,
+//                'full_match' => $matches[0] // Сохраняем, чтобы точно знать, что отрезать
+//            ];
+//        }
+//        return ['error' => "ОШИБКА (Строка $lineKey): Неверный формат заголовка. Ожидается '@type{key,'"];
+//    }
+
+
     private function extractHeader(string $line, int $lineKey): array
     {
-        // Запятая теперь опциональна (\s*,?\s*)
-        if (preg_match('/@(\w+)\s*\{\s*([^,\s\}]+)\s*,?\s*/i', $line, $matches)) {
+        // Улучшенная регулярка для захвата позиции ключа
+        // Группа 1: тип, Группа 2: ключ
+        if (preg_match('/@(\w+)\s*\{\s*([^,\s\}]+)/i', $line, $matches, PREG_OFFSET_CAPTURE)) {
             return [
-                'type' => strtolower($matches[1]),
-                'key'  => trim($matches[2]),
-                'full_match' => $matches[0] // Сохраняем, чтобы точно знать, что отрезать
+                'type'        => strtolower($matches[1][0]),
+                'key'         => trim($matches[2][0]),
+                'key_column'  => $matches[2][1] + 1, // Позиция ключа для подсветки
+                'full_match'  => $line // Используем всю строку до начала полей
             ];
         }
-        return ['error' => "ОШИБКА (Строка $lineKey): Неверный формат заголовка. Ожидается '@type{key,'"];
+        return ['error' => [
+            'severity' => 'error',
+            'message'  => "Неверный формат заголовка. Ожидается '@type{key,'",
+            'line'     => $lineKey,
+            'column'   => 1,
+            'length'   => strlen($line)
+        ]];
     }
+
 
 
     /**
@@ -367,47 +429,6 @@ class BibtexParserService
 
         return $errors;
     }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 

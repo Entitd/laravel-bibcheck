@@ -17,15 +17,15 @@ class BibtexParserTest extends TestCase
         // Передаем статью БЕЗ автора (author - обязателен в твоем массиве)
         $badBib = <<<PHP
             @article{bephy
-            title={фывфывф},author= Beebe, Nelson HF",journal="TUGBoat" volume={14} number={4}
+            title={фывфывф},author= "Beebe, Nelson HF", journal="TUGBoat", volume={14}, number={4},
               pages={395--419},
               hyphenation = {english},
               year={1993}
             }
             @article{bephy
-            title={фывфывф},author= Beebe, Nelson HF",journal="TUGBoat" volume={14} number={4}
+            title={фывфывф},author= "Beebe, Nelson HF",journal="TUGBoat", volume={14}, number={4},
               pages={395--419},
-              hyphenation = {english},
+              hyphenation = english,
               year={1993}
             }
         PHP;
