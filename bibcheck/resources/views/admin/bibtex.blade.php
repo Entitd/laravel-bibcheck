@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>BibCheck — Blade Mode</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100 p-10">
+    <h1 class="text-2xl font-bold mb-6">Админ-панель BibCheck</h1>
+
+{{--    <section class="bg-white p-6 rounded shadow mb-10">--}}
+{{--        <h2 class="text-xl mb-4">Добавить новый тип записи</h2>--}}
+{{--        <form action="{{ route('admin.bibtex.store') }}" method="POST">--}}
+{{--            @csrf--}}
+{{--            <input type="text" name="name" placeholder="Название (напр. thesis)" class="border p-2 rounded mr-2">--}}
+{{--            <button type="submit" class="bg-blue-500 text-white px-4 py-2 rounded">Создать</button>--}}
+{{--        </form>--}}
+{{--    </section>--}}
+
+    <h2 class="text-xl mb-4">Существующие типы записей:</h2>
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        @foreach($types as $type)
+            <div class="bg-white p-4 rounded shadow border-t-4 border-blue-500">
+                <h3 class="font-bold text-lg uppercase mb-2">{{ $type->name_type_entry }}</h3>
+                <ul class="text-sm text-gray-600">
+                    @foreach($type->fields as $field)
+                        <li class="bg-gray-50 mb-1 px-2 py-1 rounded border">
+                            {{ $field->name_field }}
+                            <span class="text-xs text-gray-400">(order: {{ $field->pivot->sort_order }})</span>
+                        </li>
+                    @endforeach
+                </ul>
+                <button class="mt-4 text-red-500 text-xs hover:underline">Удалить тип</button>
+            </div>
+        @endforeach
+    </div>
+</body>
+</html>

@@ -10,7 +10,7 @@ class BibtexField extends Model
 {
     protected $fillable = [
         'name_field',
-        ];
+    ];
 
     public function typeEntries(): BelongsToMany
     {
