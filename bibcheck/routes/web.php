@@ -5,6 +5,12 @@ use Laravel\Fortify\Features;
 
 use App\Http\Controllers\BibFileController;
 use App\Http\Controllers\Admin\BibtexController as AdminBibTexController;
+
+use App\Http\Controllers\Admin\BibtexController;
+use App\Http\Controllers\Admin\BibtexFieldController;
+
+use function Pest\Laravel\post;
+
 //Route::inertia('/', 'welcome', [
 //    'canRegister' => Features::enabled(Features::registration()),
 //])->name('home');
@@ -29,6 +35,15 @@ Route::post('/upload-bib-blade', [BibFileController::class, 'uploadBlade'])->nam
 /**
  * Роуты для админки
  */
-Route::get('/admin/bibtex', [AdminBibTexController::class, 'index'])->name('admin.bibtex');
+Route::prefix('admin')->name('admin.')->group(function () {
+    // Управление типами (BibtexController)
+    Route::get('/bibtex', [BibtexController::class, 'index'])->name('bibtex.index');
+    Route::post('/bibtex', [BibtexController::class, 'store'])->name('bibtex.store');
+    Route::delete('/bibtex/{type}', [BibtexController::class, 'destroy'])->name('bibtex.destroy');
+
+    // Управление полями (BibtexFieldController)
+    Route::post('/fields', [BibtexFieldController::class, 'store'])->name('fields.store');
+    Route::delete('/fields/{field}', [BibtexFieldController::class, 'destroy'])->name('fields.destroy');
+});
 
 require __DIR__.'/settings.php';
