@@ -14,7 +14,7 @@ class BibtexController extends Controller
         $fields = BibtexField::orderBy('name_field')->get(); // Для списка полей и для чекбоксов
 
         // Используем одну вьюху, которую ты скинул
-        return view('admin.bibtex', [
+        return view('admin.bibtex.index', [
             'types' => $types,
             'fields' => $fields,
             'allFields' => $fields // Для формы создания типа
