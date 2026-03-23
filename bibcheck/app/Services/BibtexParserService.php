@@ -136,8 +136,8 @@ class BibtexParserService
     private function parseEntry(array $recordLines, array &$usedKeys): array
     {
 
-        var_dump("usedKeys");
-        var_dump($usedKeys);
+//        var_dump("usedKeys");
+//        var_dump($usedKeys);
 
         $lineKeys = array_keys($recordLines);
         $firstLineKey = $lineKeys[0];
@@ -149,8 +149,8 @@ class BibtexParserService
 
         $errors = [];
 
-        var_dump("header[key]");
-        var_dump($header['key']);
+//        var_dump("header[key]");
+//        var_dump($header['key']);
 
         // --- ПРОВЕРКА НА УНИКАЛЬНОСТЬ KEY ---
         $currentKey = isset($header['key']) ? $header['key'] : null;
@@ -258,7 +258,7 @@ class BibtexParserService
             }
             $column = ($fieldOffset - $lineStartPos) + 1;
 
-            var_dump($fieldName, $fieldValueRaw, $absoluteLine);
+//            var_dump($fieldName, $fieldValueRaw, $absoluteLine);
             $cleanData = $this->sanitizeFieldValue($fieldName, $fieldValueRaw, $absoluteLine);
 
             if ($cleanData['error']) {
@@ -519,40 +519,40 @@ class BibtexParserService
     public function isForeignLanguage(array $fields): int
     {
 
-        var_dump("fields");
-        var_dump($fields);
+//        var_dump("fields");
+//        var_dump($fields);
 
         $hyphenation = strtolower($fields['hyphenation'] ?? '');
         $title = $fields['title'] ?? '';
 
         // Если явно указано 'russian', то это точно не иностранный
         if (in_array($hyphenation, ['russian', 'russia', 'rus'])) {
-            var_dump("+++++++++++++++++++++++++++");
+//            var_dump("+++++++++++++++++++++++++++");
             return 0;
         }
 
         // Если поле $title пустое,
         if ($title === '') {
-            var_dump("===========");
+//            var_dump("===========");
 
             return 0;
         }
 
         // Проверка на отсутствие кириллицы
         if (preg_match('/[а-яё]/iu', $title)) {
-            var_dump("00000000000000000000");
+//            var_dump("00000000000000000000");
 
             return 0; // Русских букв нет -> иностранный
         }
 
         // Если не русский, то иностранный
         if ($hyphenation !== '') {
-            var_dump("555555555555555");
+//            var_dump("555555555555555");
 
             return 1;
         }
 
-        var_dump("222222222222");
+//        var_dump("222222222222");
 
 
         return 0; // Нашли русские буквы -> отечественный

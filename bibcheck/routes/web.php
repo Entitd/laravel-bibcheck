@@ -13,17 +13,7 @@ use App\Http\Controllers\Admin\DepartmentController;
 
 use function Pest\Laravel\post;
 
-//Route::inertia('/', 'welcome', [
-//    'canRegister' => Features::enabled(Features::registration()),
-//])->name('home');
-
-//Route::middleware(['auth', 'verified'])->group(function () {
-//    Route::inertia('dashboard', 'dashboard')->name('dashboard');
-//});
-
-
 Route::post('/upload-bib', [BibFileController::class, 'upload'])->name('bib.upload');
-
 
 // Страница с Blade-формой
 Route::get('/', function () {
