@@ -31,6 +31,8 @@ class BibFileController extends Controller
         $content = \Illuminate\Support\Facades\Storage::get($path);
         $analysisResults = $this->parserService->analyze($content);
 
+        $analysisResults['raw_content'] = $content;
+
         // Возвращаемся назад и кладем результат в сессию
         return redirect()->route('bib.blade')->with('analysis', $analysisResults);
     }
