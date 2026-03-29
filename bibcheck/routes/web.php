@@ -23,6 +23,9 @@ Route::get('/', function () {
 // Роут для обработки формы именно из Blade
 Route::post('/upload-bib-blade', [BibFileController::class, 'uploadBlade'])->name('bib.upload.blade');
 
+// Роут для обновления отредактированного файла
+Route::post('/update-bib', [BibFileController::class, 'update'])->name('bib.update');
+
 
 /**
  * Роуты для админки

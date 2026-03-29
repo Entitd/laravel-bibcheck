@@ -32,6 +32,26 @@ class BibFileController extends Controller
         $analysisResults = $this->parserService->analyze($content);
 
         $analysisResults['raw_content'] = $content;
+        $analysisResults['filename'] = $bibFile->filename;
+
+        // Возвращаемся назад и кладем результат в сессию
+        return redirect()->route('bib.blade')->with('analysis', $analysisResults);
+    }
+
+    public function update(Request $request)
+    {
+        $request->validate(['bib_content' => 'required|string']);
+
+        $content = $request->input('bib_content');
+
+        // Отладка: логируем количество строк
+        \Log::info('BIB Update - строки: ' . substr_count($content, "\n") + 1);
+        \Log::info('BIB Update - первые 500 символов: ' . substr($content, 0, 500));
+
+        $analysisResults = $this->parserService->analyze($content);
+
+        $analysisResults['raw_content'] = $content;
+        $analysisResults['filename'] = $request->input('original_filename', 'edited_file.bib');
 
         // Возвращаемся назад и кладем результат в сессию
         return redirect()->route('bib.blade')->with('analysis', $analysisResults);
