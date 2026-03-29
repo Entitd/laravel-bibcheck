@@ -76,34 +76,56 @@
 
                         <div class="flex group {{ $hasErrors ? 'bg-red-900/30' : '' }}">
                             <span class="w-10 inline-block text-gray-500 select-none">{{ $lineNum }}</span>
-
                             <span class="relative">
-                        @if(!$hasErrors)
+            @if(!$hasErrors)
                                     {{ $line }}
                                 @else
                                     @php
-                                        // Сортируем ошибки в строке по колонке (от конца к началу, чтобы не ломать офсеты при вставке тегов)
+                                        $chars = mb_str_split($line);
                                         $currentLineErrors = $errorsByLine[$lineNum];
-                                        usort($currentLineErrors, fn($a, $b) => $b['column'] <=> $a['column']);
 
-                                        $tempLine = e($line); // Экранируем HTML
-                                        foreach ($currentLineErrors as $error) {
-                                            $col = $error['column'] - 1;
-                                            $len = $error['length'] ?? 1;
+                                        // 1. Группируем ошибки по позиции (column + length),
+                                        // чтобы не рисовать матрешку из тегов
+                                        $grouped = [];
+                                        foreach ($currentLineErrors as $err) {
+                                            $key = $err['column'] . '-' . ($err['length'] ?? 1);
+                                            $grouped[$key][] = $err['message'];
+                                        }
 
-                                            // Вставляем span с тултипом
-                                            $part1 = mb_substr($tempLine, 0, $col);
-                                            $part2 = mb_substr($tempLine, $col, $len);
-                                            $part3 = mb_substr($tempLine, $col + $len);
+                                        // 2. Сортируем ключи позиций от конца строки к началу
+                                        krsort($grouped);
 
-                                            $tempLine = $part1 . '<span class="bg-red-600 text-white cursor-help group/err relative" title="' . e($error['message']) . '">' . $part2 .
-                                                        '<span class="hidden group-hover/err:block absolute bottom-full left-0 mb-2 w-64 bg-black text-xs p-2 rounded shadow-xl z-50">' . e($error['message']) . '</span>' .
-                                                        '</span>' . $part3;
+                                        foreach ($grouped as $pos => $messages) {
+                                            list($col, $len) = explode('-', $pos);
+                                            $col = (int)$col - 1;
+                                            $len = (int)$len;
+
+                                            // Объединяем сообщения через разделитель
+                                            $fullMessage = implode(" | ", $messages);
+
+                                            // Берем текст, который вызвал ошибку
+                                            $originalText = array_slice($chars, $col, $len);
+                                            $textToWrap = e(implode('', $originalText));
+
+                                            // Формируем ОДИН span для всех ошибок в этой позиции
+                                            $wrapped = '<span class="bg-red-600 text-white cursor-help group/err relative" title="' . e($fullMessage) . '">'
+                                                     . $textToWrap
+                                                     . '<span class="hidden group-hover/err:block absolute bottom-full left-0 mb-2 w-64 bg-black text-xs p-2 rounded shadow-xl z-50 normal-case font-sans font-normal">'
+                                                     . e($fullMessage)
+                                                     . '</span></span>';
+
+                                            array_splice($chars, $col, $len, [$wrapped]);
+                                        }
+
+                                        // Собираем строку, экранируя только то, что не является нашим HTML
+                                        $finalLine = '';
+                                        foreach ($chars as $item) {
+                                            $finalLine .= (str_contains($item, '<span')) ? $item : e($item);
                                         }
                                     @endphp
-                                    {!! $tempLine !!}
+                                    {!! $finalLine !!}
                                 @endif
-                    </span>
+        </span>
                         </div>
                     @endforeach
                 </div>
