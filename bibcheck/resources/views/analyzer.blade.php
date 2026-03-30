@@ -6,22 +6,41 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         .line-numbers {
-            counter-reset: line;
+            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+            font-size: 0.875rem;
+            line-height: 1.5rem;
+            padding-top: 1rem;
+            padding-bottom: 1rem;
+            overflow-x: hidden;
         }
         .line-numbers > div {
-            counter-increment: line;
-        }
-        .line-numbers > div::before {
-            content: counter(line);
-            display: inline-block;
+            height: 1.5rem;
             width: 2.5rem;
             text-align: right;
             padding-right: 0.75rem;
-            color: #6b7280;
+            color: #9ca3af;
             user-select: none;
+            white-space: pre;
         }
         textarea.line-editor {
+            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+            font-size: 0.875rem;
+            line-height: 1.5rem;
             tab-size: 4;
+            padding-top: 1rem;
+            padding-bottom: 1rem;
+            padding-left: 1rem;
+            padding-right: 1rem;
+            white-space: pre;
+            overflow-wrap: normal;
+            word-break: normal;
+            border: none;
+            outline: none;
+            resize: none;
+            width: 100%;
+            box-sizing: border-box;
+            overflow-x: auto;
+            overflow-y: hidden;
         }
     </style>
 </head>
@@ -62,9 +81,9 @@
                         <div class="relative bg-gray-900 rounded-lg overflow-hidden">
                             <div class="flex">
                                 {{-- Номера строк --}}
-                                <div class="line-numbers bg-gray-800 text-gray-500 text-sm font-mono py-4 select-none" id="lineNumbers"></div>
+                                <div class="line-numbers bg-gray-800 select-none border-r border-gray-700" id="lineNumbers"></div>
                                 {{-- Текстовое поле --}}
-                                <textarea name="bib_content" id="bibEditor" class="line-editor flex-1 h-[600px] p-4 font-mono text-sm bg-gray-900 text-gray-100 focus:outline-none leading-6 resize-y border-l border-gray-700">{{ old('bib_content', session('analysis')['raw_content'] ?? '') }}</textarea>
+                                <textarea name="bib_content" id="bibEditor" class="line-editor bg-gray-900 text-gray-100" rows="20">{{ old('bib_content', session('analysis')['raw_content'] ?? '') }}</textarea>
                             </div>
                         </div>
                     </div>
@@ -145,14 +164,25 @@
 
                 function updateLineNumbers() {
                     const lines = textarea.value.split('\n');
-                    lineNumbers.innerHTML = lines.map((_, i) =>
-                        '<div>' + (i + 1) + '</div>'
+                    const lineCount = lines.length;
+                    const lineHeight = parseFloat(getComputedStyle(textarea).lineHeight);
+
+                    // Генерируем номера строк
+                    lineNumbers.innerHTML = Array.from({ length: lineCount }, (_, i) =>
+                        `<div style="height: ${lineHeight}px; line-height: ${lineHeight}px">${i + 1}</div>`
                     ).join('');
+
+                    // Фиксируем высоту textarea по количеству строк
+                    const paddingTop = parseFloat(getComputedStyle(textarea).paddingTop);
+                    const paddingBottom = parseFloat(getComputedStyle(textarea).paddingBottom);
+                    const totalHeight = paddingTop + paddingBottom + (lineCount * lineHeight);
+                    textarea.style.height = totalHeight + 'px';
+                    lineNumbers.style.height = totalHeight + 'px';
                 }
 
                 // Синхронизация прокрутки
                 textarea.addEventListener('scroll', function() {
-                    lineNumbers.scrollTop = textarea.scrollTop;
+                    lineNumbers.scrollLeft = textarea.scrollLeft;
                 });
 
                 // Обновление при вводе
