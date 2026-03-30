@@ -28,11 +28,11 @@ export default function Welcome() {
                                 e.target.files ? e.target.files[0] : null,
                             )
                         }
-                        className="block w-full text-sm text-gray-500 file:mr-4 file:rounded-full file:border-0 file:bg-blue-50 file:px-4 file:py-2 file:text-sm file:font-semibold file:text-blue-700 hover:file:bg-blue-100"
+                        title={errors.bib_file}
+                        className={`block w-full text-sm text-gray-500 file:mr-4 file:rounded-full file:border-0 file:bg-blue-50 file:px-4 file:py-2 file:text-sm file:font-semibold file:text-blue-700 hover:file:bg-blue-100 ${errors.bib_file ? 'border-red-500 ring-1 ring-red-500' : ''}`}
                     />
-                    {/* Если будут ошибки валидации от Laravel, они появятся здесь */}
                     {errors.bib_file && (
-                        <div className="mt-2 text-red-500">
+                        <div className="mt-2 text-sm text-red-500">
                             {errors.bib_file}
                         </div>
                     )}

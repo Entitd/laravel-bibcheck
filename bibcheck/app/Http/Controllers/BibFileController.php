@@ -44,14 +44,17 @@ class BibFileController extends Controller
 
         $content = $request->input('bib_content');
 
-        // Отладка: логируем количество строк
-        \Log::info('BIB Update - строки: ' . substr_count($content, "\n") + 1);
-        \Log::info('BIB Update - первые 500 символов: ' . substr($content, 0, 500));
-
         $analysisResults = $this->parserService->analyze($content);
 
         $analysisResults['raw_content'] = $content;
         $analysisResults['filename'] = $request->input('original_filename', 'edited_file.bib');
+
+        // Если это AJAX-запрос, возвращаем только ошибки
+        if ($request->expectsJson() || $request->ajax()) {
+            return response()->json([
+                'errors' => $analysisResults['errors']
+            ]);
+        }
 
         // Возвращаемся назад и кладем результат в сессию
         return redirect()->route('bib.blade')->with('analysis', $analysisResults);
