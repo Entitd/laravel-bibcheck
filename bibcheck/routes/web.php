@@ -16,8 +16,12 @@ use function Pest\Laravel\post;
 Route::post('/upload-bib', [BibFileController::class, 'upload'])->name('bib.upload');
 
 // Страница с Blade-формой
+//Route::get('/', function () {
+//    return view('analyzer');
+//})->name('bib.blade');
+
 Route::get('/', function () {
-    return view('analyzer');
+    return view('bib.editor');
 })->name('bib.blade');
 
 // Роут для обработки формы именно из Blade
