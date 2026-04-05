@@ -5,14 +5,14 @@ namespace App\Http\Controllers;
 use Illuminate\Http\Request;
 use App\Models\BibFile;
 use Illuminate\Support\Facades\Storage;
-use App\Services\BibtexParserService;
+use App\Services\BibtexService;
 
 class BibFileController extends Controller
 {
     protected $parserService;
 
     // Внедряем сервис через конструктор
-    public function __construct(BibtexParserService $parserService)
+    public function __construct(BibtexService $parserService)
     {
         $this->parserService = $parserService;
     }
