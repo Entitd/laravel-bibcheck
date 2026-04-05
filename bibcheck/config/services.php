@@ -14,6 +14,10 @@ return [
     |
     */
 
+    'openalex' => [
+        'key' => env('OPENALEX_API_KEY'),
+        'url' => env('OPENALEX_API_URL'),
+    ],
     'postmark' => [
         'key' => env('POSTMARK_API_KEY'),
     ],

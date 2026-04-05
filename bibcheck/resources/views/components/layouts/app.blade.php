@@ -10,7 +10,8 @@
         /* Контейнер редактора */
         .editor-container {
             display: flex;
-            background-color: #111827; /* Темный фон как в VS Code */
+            /*background-color: #111827; !* Темный фон как в VS Code *!*/
+            background-color: #c4d4f6;
             border-radius: 0.75rem;
             border: 1px solid #374151;
             min-height: 550px;
@@ -25,7 +26,8 @@
             line-height: 1.5rem;
             padding: 1.25rem 0;
             width: 3.5rem;
-            background-color: #1f2937;
+            /*background-color: #1f2937;*/
+            background-color: #bfceea;
             border-right: 1px solid #374151;
             color: #9ca3af;
             user-select: none;

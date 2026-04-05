@@ -13,6 +13,9 @@ use App\Http\Controllers\Admin\DepartmentController;
 
 use function Pest\Laravel\post;
 
+Route::get('apiCheck', [\App\Services\ExternalApi\OpenAlexProvider::class, 'findByTitle']);
+
+
 Route::post('/upload-bib', [BibFileController::class, 'upload'])->name('bib.upload');
 
 // Страница с Blade-формой

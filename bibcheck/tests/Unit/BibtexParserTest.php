@@ -16,24 +16,24 @@ class BibtexParserTest extends TestCase
 
         // Передаем статью БЕЗ автора (author - обязателен в твоем массиве)
         $badBib = <<<PHP
-            @article{bephy
-            title={фывфывф},author= "Beebe, Nelson HF", journal="TUGBoat", volume={14}, number={4},
-              pages={395--419},
-              hyphenation = {english},
-              year={1993}
-            }
-            @article{bephy
-            title={фывфывф},author= "Beebe, Nelson HF",journal="TUGBoat", volume={14}, number={4},
-              pages={395--419},
-              hyphenation = english,
-              year={1993}
-            }
+                @article{logunova,
+                  author      = {Логунова, О. С. and Ильина, Е. А. and Попов, С. Н. and Кочежинская, Ю. В. and Сибилева, Н. С.},
+                  title       = {Структура программного модуля для обработки библиографической информации},
+                  journal     = {Омский научный вестник},
+                  year        = {2016},
+                  volume      = {150},
+                  number      = {6},
+                  pages       = {158--164},
+                  hyphenation = {russian},
+                  %url         = {https://cyberleninka.ru/article/n/struktura-programmnogo-modulya-dlya-obrabotki-bibliograficheskoy-informatsii}
+                 }
+
         PHP;
 
         $result = $service->analyze($badBib);
 
         echo "-------------------------";
-        print_r($result);
+//        print_r($result);
     }
 
 //    /** @test */
