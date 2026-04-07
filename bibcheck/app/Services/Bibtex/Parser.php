@@ -18,6 +18,9 @@ class Parser
         $rawBlocks = $this->splitIntoBlocks($text);
         $usedKeys = []; // Это для ключей @article{KEY,
         $parsedData = $this->parseBlocks($rawBlocks,$usedKeys);
+
+        var_dump("parsedData");
+        var_dump($parsedData);
         return $parsedData;
     }
 

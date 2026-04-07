@@ -29,7 +29,7 @@ class BibFileController extends Controller
         ]);
 
         $content = \Illuminate\Support\Facades\Storage::get($path);
-        $analysisResults = $this->parserService->analyze($content);
+        $analysisResults = $this->parserService->fullCheck($content);
 
         $analysisResults['raw_content'] = $content;
         $analysisResults['filename'] = $bibFile->filename;
