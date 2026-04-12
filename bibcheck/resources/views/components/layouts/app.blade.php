@@ -3,6 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="csrf-token" content="{{ csrf_token() }}">
     <script src="https://cdn.tailwindcss.com"></script> {{-- ПРОВЕРЬ ЭТУ СТРОКУ --}}
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
     <style>
@@ -11,7 +12,7 @@
         .editor-container {
             display: flex;
             /*background-color: #111827; !* Темный фон как в VS Code *!*/
-            background-color: #c4d4f6;
+            background-color: #fff8f8; /* ОСНОВНОЕ ТЕЛО */
             border-radius: 0.75rem;
             border: 1px solid #374151;
             min-height: 550px;
@@ -27,9 +28,9 @@
             padding: 1.25rem 0;
             width: 3.5rem;
             /*background-color: #1f2937;*/
-            background-color: #bfceea;
+            background-color: #84a3ff; /*БОКОВУШКА*/
             border-right: 1px solid #374151;
-            color: #9ca3af;
+            color: #000000; /*ТЕКСТ БОКОВУШКИ*/
             user-select: none;
             z-index: 30;
             text-align: right;
@@ -46,7 +47,7 @@
         .line-numbers > div[data-error]:hover::after {
             content: attr(data-error);
             position: absolute; left: 100%; top: 0; margin-left: 10px;
-            background: #111827; color: #f3f4f6; padding: 10px;
+            background: #111827; color: #000000; padding: 10px;
             border-radius: 6px; font-size: 12px; width: 280px;
             z-index: 100; border: 1px solid #4b5563;
             white-space: pre-wrap; text-align: left;
@@ -68,7 +69,7 @@
 
         textarea.line-editor {
             position: relative; z-index: 2; width: 100%; padding: 1.25rem;
-            background: transparent !important; color: #f3f4f6;
+            background: transparent !important; color: #000000;
             font-family: 'JetBrains Mono', monospace; font-size: 0.875rem;
             line-height: 1.5rem; border: none; outline: none;
             resize: none; white-space: pre; overflow-x: auto;
@@ -89,7 +90,14 @@
 <main class="flex-1 p-8 overflow-y-auto">
     <header class="flex justify-between items-center mb-8 text-sm text-gray-500">
         <span>📋 @yield('breadcrumb')</span>
-        <span>Справка ⓘ</span>
+        <div class="flex items-center gap-4">
+            @guest
+                <a href="{{ route('guest.login') }}" class="text-gray-600 hover:text-gray-900 font-medium transition">
+                    Войти
+                </a>
+            @endguest
+            <span>Справка ⓘ</span>
+        </div>
     </header>
 
     {{ $slot }} {{-- Сюда вставится контент страницы --}}

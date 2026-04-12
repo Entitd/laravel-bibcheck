@@ -19,8 +19,6 @@ class Parser
         $usedKeys = []; // Это для ключей @article{KEY,
         $parsedData = $this->parseBlocks($rawBlocks,$usedKeys);
 
-        var_dump("parsedData");
-        var_dump($parsedData);
         return $parsedData;
     }
 
@@ -92,7 +90,7 @@ class Parser
         // 1. Работаем с заголовком
         $header = $this->extractHeader($recordLines[$firstLineKey], $firstLineKey);
         if (isset($header['error'])) {
-            return ['error' => [$header['error']], 'zapis' => []];
+            return ['error' => [$header['error']], 'entry' => null];
         }
 
         $errors = [];

@@ -24,10 +24,15 @@ class BibValidator
      */
     public function verifySourceOnline(array $fields): array
     {
-        if (empty($fields['title'])) return ['found' => false];
+        if (empty($fields['title'])) {
+            return ['found' => false, 'message' => 'Отсутствует поле title'];
+        }
 
         $provider = new OpenAlexProvider();
-        $externalData = $provider->findByTitle($fields['title']);
+        $author = $fields['author'] ?? null;
+        $year = $fields['year'] ?? null;
+
+        $externalData = $provider->findByTitle($fields['title'], $author, $year);
 
         if (!$externalData) {
             return [
@@ -36,21 +41,16 @@ class BibValidator
             ];
         }
 
-        // Проверяем схожесть названий
-        $titleSimilarity = $this->calculateSimilarity($fields['title'], $externalData['title']);
+//        dump("externalData:" ,  [$externalData]);
 
-        // Проверяем авторов (опционально, так как форматы записи авторов сильно разнятся)
-        $authorMatch = false;
-//        if (!empty($fields['author'])) {
-//            // Простая проверка: содержится ли фамилия первого автора из BibTeX в ответе API
-//            $firstAuthor = explode(',', $fields['author'])[0];
-//            if (mb_stripos($externalData['authors'], trim($firstAuthor)) !== false) {
-//                $authorMatch = true;
-//            }
-//        }
+        // Проверяем схожесть названий
+//        $titleSimilarity = $this->calculateSimilarity($fields['title'], $externalData['title']);
+
+        $titleSimilarity = $externalData['title'][0]['similarity'];
+//        dump("titleSimilarity:" ,  [$titleSimilarity]);
 
         // Если название совпадает более чем на 85%, считаем что нашли
-        if ($titleSimilarity > 0.85) {
+        if ($titleSimilarity > 85) {
             return [
                 'found' => true,
                 'external_data' => $externalData,
@@ -59,9 +59,12 @@ class BibValidator
             ];
         }
 
+        // Возвращаем информацию даже если не нашли — для отладки
         return [
             'found' => false,
-            'message' => "Похожий источник найден, но название совпадает лишь на " . round($titleSimilarity * 100) . "%"
+            'similarity' => $titleSimilarity,
+            'external_title' => $externalData['title'],
+            'message' => "Похожий источник найден, но название совпадает лишь на " . round($titleSimilarity) . "%"
         ];
     }
 

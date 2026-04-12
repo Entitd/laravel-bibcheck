@@ -9,6 +9,7 @@ use Tests\TestCase;
 use App\Services\BibtexService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
+use App\Services\ExternalApi\OpenAlexProvider;
 class BibtexParserTest extends TestCase
 {
     use RefreshDatabase;
@@ -16,41 +17,95 @@ class BibtexParserTest extends TestCase
     public function test_it_identifies_missing_required_fields()
     {
 
-         $parser = new Parser();
-         $gost = new GostValidator();
-         $api = new BibValidator();
 
-        $service = new BibtexService($parser, $gost, $api);
+      $aapi = new OpenAlexProvider();
+    
+      $targetTitle = 'Bibliography prettyprinting and syntax checking';
+      $response = $aapi->findByTitle($targetTitle);
+$bestMatch = $response['results'][0] ?? null;
 
-        // Передаем статью БЕЗ автора (author - обязателен в твоем массиве)
-        $badBib = <<<PHP
-                @manual{GOST7052008,
-                  title = {ГОСТ 7.0.5-2008: Библиографическая ссылка. Общие требования и правила составления},
-                  year = {2008},
-                  organization = {Издательство стандартов},
-                  address     = {Москва},
-                  pagetotal = {22},
-                  %url         = {https://www.ifap.ru/library/gost/7052008.pdf}
-                }
-
-                @article{logunova,
-                  author      = {Логунова, О. С. and Ильина, Е. А. and Попов, С. Н. and Кочежинская, Ю. В. and Сибилева, Н. С.},
-                  title       = {Структура программного модуля для обработки библиографической информации},
-                  journal     = {Омский научный вестник},
-                  year        = {2016},
-                  volume      = {150},
-                  number      = {6},
-                  pages       = {158--164},
-                  hyphenation = {russian},
-                  %url         = {https://cyberleninka.ru/article/n/struktura-programmnogo-modulya-dlya-obrabotki-bibliograficheskoy-informatsii}
-                 }
-        PHP;
-
-        $analysisResults = $service->fullCheck($badBib);
+$this->assertNotNull($bestMatch, "Источник не найден даже с учетом XPAC");
+      
+      // Проверяем, что заголовок совпадает достаточно сильно (например, > 80%)
+      similar_text(mb_strtolower($targetTitle), mb_strtolower($bestMatch['title']), $percent);
+      $this->assertGreaterThan(80, $percent, "Найденный заголовок '{$bestMatch['title']}' слишком отличается");
 
 
-        echo "-------------------------";
-//        print_r($result);
+
+        // // Передаем статью БЕЗ автора (author - обязателен в твоем массиве)
+        // $badBib = <<<PHP
+        // %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+        // @article{beebe1993bibliography,
+        //   title={Bibliography prettyprinting and syntax checking},
+        //   author={Beebe, Nelson HF},
+        //   journal={TUGBoat},
+        //   volume={14},
+        //   number={4},
+        //   pages={395--419},
+        //   hyphenation = {english},
+        //   year={1993}
+        
+        // }
+        
+        // @article{Frederick,
+        //   author    = {Hensley, Merinda Kaye},
+        //   title     = {Citation Management Software: Features and Futures},
+        //   journal   = {Reference \& User Services Quarterly},
+        //   volume    = {50},
+        //   number    = {3},
+        //   pages     = {204--208},
+        //   year      = {2011},
+        //   % url       = {https://journals.ala.org/index.php/rusq/article/download/3962/4448},
+        // }
+        
+        // @manual{Oren_Patashnik,
+        //   abstract = {This document is a systematic reference manual for the Biblatex package},
+        //   organization = {Lehman, Philipp and Kime, Philipp and Boruvka, Audrey and Wright, Joseph},
+        //   pagetotal       = {262},
+        //   title = {The Biblatex Package},
+        //   address     = {Berlin},
+        // hyphenation = {english},
+        //  %url = {http://ctan.mirrorcatalogs.com/macros/latex/contrib/biblatex/doc/biblatex.pdf},
+        //   year = 2025
+        // }
+        
+        // @article{Volnov,
+        //   author      = {Вольнов, Е. В},
+        //   title       = {Использование издательской системы Latex для оформления диссертаций},
+        //   journal     = {Медицинский альманах},
+        //   year        = {2022},
+        //   volume      = {15},
+        //   number      = {4},
+        //   pages       = {1--15},
+        //   hyphenation = {russian},
+        //   %url        = {https://cyberleninka.ru/article/n/ispolzovanie-izdatelskoy-sistemy-latex-dlya-oformleniya-dissertatsiy/viewer}
+        //   %про исподьзование latex
+        // }
+        // PHP;
+
+
+
+        // $analysisResults = $service->fullCheck($badBib);
+
+        // var_dump($analysisResults);
+        // // Проверяем что парсер нашёл 2 записи
+        // $this->assertCount(2, $analysisResults['entries']);
+        // $this->assertArrayHasKey('GOST7052008', $analysisResults['entries']);
+        // $this->assertArrayHasKey('logunova', $analysisResults['entries']);
+
+        // // Проверяем метрики
+        // $this->assertEquals(2, $analysisResults['aggregated_metrics']['totalQuantity']);
+
+        // // Проверяем что у manual нет обязательного поля organization — ошибок не будет,
+        // // а у article должны быть все обязательные поля
+        // $logunovaErrors = $analysisResults['entries']['logunova']['gost_errors'];
+        // $missingRequiredFields = array_filter($logunovaErrors, fn($e) => str_contains($e['message'], 'отсутствует обязательное поле'));
+        // $this->assertEmpty($missingRequiredFields);
+
+        // // Проверяем что manual без language получает рекомендацию
+        // $manualErrors = $analysisResults['entries']['GOST7052008']['gost_errors'];
+        // $hasLangRecommendation = array_filter($manualErrors, fn($e) => str_contains($e['message'], 'language'));
+        // $this->assertNotEmpty($hasLangRecommendation);
     }
 
 //    /** @test */

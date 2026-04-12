@@ -47,59 +47,67 @@ class GostValidator
     ];
 
 
-
     /**
-     * Большая валидация полей и требований ГОСТ
+     * Валидирует одну записи (DTO) на соответствие ГОСТ
      */
-    private function validateEntry(string $type, array $foundFields, int $headerLine): array
+    public function validate($entry): array
     {
+        if (!$entry instanceof \App\DTO\BibEntryDTO) {
+            return [['severity' => 'error', 'message' => 'Неверный тип записи для валидации.']];
+        }
+
         $errors = [];
+        $type = $entry->type;
+        $fields = $entry->fields;
+        $headerLine = $entry->startLine;
+
         $rules = self::BIBTEX_DB_TYPES[$type] ?? null;
 
         if (!$rules) {
-            return [[
+            $errors[] = [
                 'severity' => 'warning',
                 'message' => "Неизвестный тип записи '@$type'.",
                 'line' => $headerLine,
                 'column' => 1,
                 'length' => strlen($type) + 1
-            ]];
-        }
-
-        // Проверка обязательных полей
-        foreach ($rules as $reqField) {
-            if (!isset($foundFields[$reqField])) {
-                $errors[] = [
-                    'severity' => 'error',
-                    'message' => "У '@$type' отсутствует обязательное поле '$reqField'.",
-                    'line' => $headerLine,
-                    'column' => 1,
-                    'length' => 10 // Подсвечиваем начало записи
-                ];
-            }
-        }
-
-        // Рекомендация по языку
-        $langFields = ['language', 'langid', 'hyphenation'];
-        if (!array_intersect(array_keys($foundFields), $langFields)) {
-            $errors[] = [
-                'severity' => 'info',
-                'message' => "Для ГОСТ рекомендуется добавить 'language' или 'langid'.",
-                'line' => $headerLine,
-                'column' => 1,
-                'length' => 1
             ];
-        }
+        } else {
+            // Проверка обязательных полей
+            foreach ($rules as $reqField) {
+                if (!isset($fields[$reqField])) {
+                    $errors[] = [
+                        'severity' => 'error',
+                        'message' => "У '@$type' отсутствует обязательное поле '$reqField'.",
+                        'line' => $headerLine,
+                        'column' => 1,
+                        'length' => 10
+                    ];
+                }
+            }
 
-        foreach ($foundFields as $fName => $_) {
-            if (!in_array($fName, $rules) && !in_array($fName, $langFields)) {
+            // Рекомендация по языку
+            $langFields = ['language', 'langid', 'hyphenation'];
+            if (!array_intersect(array_keys($fields), $langFields)) {
                 $errors[] = [
                     'severity' => 'info',
-                    'message' => "ПРЕДУПРЕЖДЕНИЕ (Строка $headerLine): Поле '$fName' не стандартно для '@$type'.",
+                    'message' => "Для ГОСТ рекомендуется добавить 'language' или 'langid'.",
                     'line' => $headerLine,
                     'column' => 1,
                     'length' => 1
                 ];
+            }
+
+            // Проверка на нестандартные поля
+            foreach ($fields as $fName => $_) {
+                if (!in_array($fName, $rules) && !in_array($fName, $langFields)) {
+                    $errors[] = [
+                        'severity' => 'info',
+                        'message' => "ПРЕДУПРЕЖДЕНИЕ (Строка $headerLine): Поле '$fName' не стандартно для '@$type'.",
+                        'line' => $headerLine,
+                        'column' => 1,
+                        'length' => 1
+                    ];
+                }
             }
         }
 
@@ -113,7 +121,7 @@ class GostValidator
     private function validateStandards(array $parsedData): array
     {
         $requirements = CourseRequirement::orderBy('course_number', 'desc')->get();
-        $metrics = $this->calculateMetrics($parsedData['zapis']);
+        $metrics = $this->calculateMetrics($parsedData['entries']);
 
         $verdict = 'Не соответствует требованиям кафедры';
         $bestMatch = ['course' => null, 'passed' => -1];
@@ -148,8 +156,10 @@ class GostValidator
 
     /**
      * Считает статистические показатели (иностранные языки, периодика, год издания).
+     *
+     * @param array $entries Массив BibEntryDTO
      */
-    private function calculateMetrics(array $entries): array
+    public function calculateMetrics(array $entries): array
     {
         $stats = [
             'totalQuantity' => 0,
@@ -158,33 +168,24 @@ class GostValidator
             'Literature21Century' => 0,
         ];
 
-        foreach ($entries as $entryData) {
-            $type = '';
-            $fields = [];
-
-            // ВАЖНО: Проходим по всем строкам записи
-            foreach ($entryData as $lineItems) {
-                foreach ($lineItems as $item) {
-                    if (isset($item['type'])) $type = $item['type'];
-                    if (isset($item['field'])) {
-                        $fields[$item['field']] = $item['value'];
-                    }
-                }
+        foreach ($entries as $entry) {
+            if (!$entry instanceof \App\DTO\BibEntryDTO) {
+                continue;
             }
 
-            if (!$type) continue;
             $stats['totalQuantity']++;
 
-            $stats['amountOfLiteratureInForeignLanguages'] += $this->isForeignLanguage($fields);
+            $stats['amountOfLiteratureInForeignLanguages'] += $this->isForeignLanguage($entry->fields);
 
-            if (in_array($type, ['article', 'inproceedings', 'incollection'])) {
+            if (in_array($entry->type, ['article', 'inproceedings', 'incollection'])) {
                 $stats['numberOfCurrentScientificPeriodicals']++;
             }
 
-            if (isset($fields['year'])) {
-                // Очищаем год от лишних символов (например, "1993}" или "[2020]")
-                $year = (int)preg_replace('/[^0-9]/', '', $fields['year']);
-                if ($year >= 2001) $stats['Literature21Century']++;
+            if (isset($entry->fields['year'])) {
+                $year = (int)preg_replace('/[^0-9]/', '', $entry->fields['year']);
+                if ($year >= 2001) {
+                    $stats['Literature21Century']++;
+                }
             }
         }
 
