@@ -10,33 +10,70 @@
     <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <style>
         :root {
-            --page-bg: #e8f1e2;
-            --page-panel: #ffffff;
-            --page-border: #dce5d6;
-            --page-muted: #6f7c73;
-            --page-ink: #243128;
-            --accent: #1f7a45;
-            --accent-soft: #edf6ef;
+            --page-bg: #f4f7fb;
+            --page-panel: rgba(255, 255, 255, 0.78);
+            --page-panel-strong: rgba(255, 255, 255, 0.92);
+            --page-border: #dbe3ee;
+            --page-muted: #64748b;
+            --page-ink: #0f172a;
+            --accent: #0f766e;
+            --accent-strong: #115e59;
+            --accent-soft: #ecfdf8;
+            --accent-ring: rgba(15, 118, 110, 0.14);
             --editor-bg: #ffffff;
-            --editor-border: #e5e7eb;
-            --editor-line-bg: #f7f8f9;
-            --editor-line-text: #9aa3af;
-            --editor-text: #1f2937;
+            --editor-border: #e2e8f0;
+            --editor-line-bg: #f8fafc;
+            --editor-line-text: #94a3b8;
+            --editor-text: #0f172a;
         }
 
         html,
         body {
             min-height: 100%;
-            background: var(--page-bg);
+            background:
+                radial-gradient(circle at top left, rgba(15, 118, 110, 0.08), transparent 34%),
+                radial-gradient(circle at top right, rgba(59, 130, 246, 0.08), transparent 28%),
+                linear-gradient(180deg, #f8fbff 0%, var(--page-bg) 48%, #eef3f9 100%);
         }
 
         body {
+            position: relative;
             margin: 0;
             color: var(--page-ink);
             font-family: 'Manrope', sans-serif;
         }
 
+        body::before,
+        body::after {
+            content: '';
+            position: fixed;
+            inset: auto;
+            pointer-events: none;
+            z-index: 0;
+            border-radius: 999px;
+            filter: blur(80px);
+            opacity: 0.6;
+        }
+
+        body::before {
+            top: 4rem;
+            left: -5rem;
+            width: 18rem;
+            height: 18rem;
+            background: rgba(15, 118, 110, 0.12);
+        }
+
+        body::after {
+            right: -4rem;
+            bottom: 3rem;
+            width: 16rem;
+            height: 16rem;
+            background: rgba(59, 130, 246, 0.1);
+        }
+
         .app-frame {
+            position: relative;
+            z-index: 1;
             min-height: 100vh;
             padding: 18px;
         }
@@ -45,9 +82,13 @@
             display: flex;
             height: calc(100vh - 36px);
             overflow: hidden;
-            border: 1px solid var(--page-border);
+            border: 1px solid rgba(219, 227, 238, 0.92);
             border-radius: 28px;
-            background: transparent;
+            background: var(--page-panel);
+            backdrop-filter: blur(24px);
+            box-shadow:
+                0 28px 80px -44px rgba(15, 23, 42, 0.28),
+                inset 0 1px 0 rgba(255, 255, 255, 0.65);
         }
 
         .workspace-main {
@@ -57,6 +98,21 @@
             padding: 14px 18px 18px;
             overflow-x: auto;
             overflow-y: auto;
+            background: linear-gradient(180deg, rgba(255, 255, 255, 0.18) 0%, rgba(255, 255, 255, 0.06) 100%);
+        }
+
+        .workspace-main::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+
+        .workspace-main::-webkit-scrollbar-track {
+            background: transparent;
+        }
+
+        .workspace-main::-webkit-scrollbar-thumb {
+            background: rgba(148, 163, 184, 0.5);
+            border-radius: 999px;
         }
 
         .workspace-header {
@@ -64,7 +120,7 @@
             align-items: center;
             justify-content: space-between;
             gap: 12px;
-            margin-bottom: 12px;
+            margin-bottom: 16px;
         }
 
         .workspace-breadcrumb {
@@ -79,18 +135,20 @@
             justify-content: center;
             width: 36px;
             height: 36px;
-            border: 1px solid rgba(111, 124, 115, 0.14);
-            border-radius: 10px;
-            background: rgba(255, 255, 255, 0.6);
+            border: 1px solid rgba(219, 227, 238, 0.92);
+            border-radius: 12px;
+            background: rgba(255, 255, 255, 0.82);
             color: var(--page-muted);
             cursor: pointer;
-            transition: background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease;
+            box-shadow: 0 14px 30px -26px rgba(15, 23, 42, 0.4);
+            transition: background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease, transform 0.2s ease;
         }
 
         .sidebar-toggle:hover {
-            background: #ffffff;
+            background: rgba(255, 255, 255, 0.96);
             color: var(--page-ink);
-            border-color: rgba(111, 124, 115, 0.24);
+            border-color: rgba(15, 118, 110, 0.18);
+            transform: translateY(-1px);
         }
 
         .workspace-actions {
@@ -106,14 +164,17 @@
             padding: 8px 12px;
             border-radius: 999px;
             color: var(--page-muted);
+            background: rgba(255, 255, 255, 0.48);
             text-decoration: none;
             font-size: 0.8125rem;
-            transition: background-color 0.2s ease, color 0.2s ease;
+            border: 1px solid transparent;
+            transition: background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease;
         }
 
         .workspace-link:hover {
-            background: rgba(255, 255, 255, 0.5);
+            background: rgba(255, 255, 255, 0.78);
             color: var(--page-ink);
+            border-color: rgba(219, 227, 238, 0.92);
         }
 
         .editor-shell {
@@ -124,6 +185,7 @@
             border: 1px solid var(--editor-border);
             border-radius: 18px;
             background: var(--editor-bg);
+            box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.68);
         }
 
         .editor-toolbar {
@@ -133,14 +195,14 @@
             gap: 12px;
             padding: 10px 14px;
             border-bottom: 1px solid var(--editor-border);
-            background: #fafafa;
+            background: linear-gradient(180deg, #fbfdff 0%, #f4f7fb 100%);
         }
 
         .editor-toolbar-meta {
             display: flex;
             align-items: center;
             gap: 10px;
-            color: #7b8794;
+            color: var(--page-muted);
             font-family: 'IBM Plex Mono', monospace;
             font-size: 0.76rem;
             letter-spacing: 0.02em;
@@ -187,7 +249,7 @@
             width: 240px;
             padding: 10px 12px;
             border-radius: 12px;
-            background: rgba(31, 41, 55, 0.96);
+            background: rgba(15, 23, 42, 0.94);
             color: #f8fafc;
             font-size: 12px;
             line-height: 1.45;
@@ -244,24 +306,24 @@
             white-space: pre;
             background: transparent !important;
             color: var(--editor-text);
-            caret-color: #111827;
+            caret-color: var(--accent-strong);
             font-family: 'IBM Plex Mono', monospace;
             font-size: 0.9rem;
             line-height: 1.5rem;
         }
 
         textarea.line-editor::selection {
-            background: rgba(34, 197, 94, 0.14);
+            background: rgba(15, 118, 110, 0.14);
         }
 
         .error-highlight {
-            border-bottom: 2px solid rgba(248, 113, 113, 0.95);
-            background: rgba(248, 113, 113, 0.18);
+            border-bottom: 2px solid rgba(244, 63, 94, 0.9);
+            background: rgba(251, 113, 133, 0.14);
         }
 
         .warning-highlight {
-            border-bottom: 2px solid rgba(251, 191, 36, 0.95);
-            background: rgba(251, 191, 36, 0.18);
+            border-bottom: 2px solid rgba(245, 158, 11, 0.88);
+            background: rgba(251, 191, 36, 0.16);
         }
 
         .app-sidebar {

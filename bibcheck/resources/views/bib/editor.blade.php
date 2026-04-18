@@ -9,21 +9,21 @@
     <div class="{{ $analysisData ? 'lg:h-[calc(100vh-120px)] lg:min-h-0 lg:flex lg:flex-col lg:overflow-hidden' : '' }}">
     {{-- Информация о просмотре из истории --}}
     @if(isset($checkHistory))
-        <div class="bg-blue-50 border border-blue-200 rounded-2xl p-4 {{ $analysisData ? 'mb-4 lg:shrink-0' : 'mb-6' }}">
+        <div class="info-surface rounded-2xl p-4 {{ $analysisData ? 'mb-4 lg:shrink-0' : 'mb-6' }}">
             <div class="flex items-center justify-between">
                 <div class="flex items-center gap-3">
-                    <span class="text-blue-600 text-xl">📋</span>
+                    <span class="info-icon text-xl">📋</span>
                     <div>
-                        <div class="font-bold text-sm text-blue-900">
+                        <div class="font-bold text-sm text-slate-900">
                             Просмотр сохранённой проверки
                         </div>
-                        <div class="text-xs text-blue-600 mt-0.5">
+                        <div class="mt-0.5 text-xs text-slate-500">
                             Дата проверки: {{ $checkHistory->created_at->format('d.m.Y H:i') }} | 
                             Файл: {{ $checkHistory->filename }}
                         </div>
                     </div>
                 </div>
-                <a href="{{ route('bib.blade') }}" class="px-4 py-2 text-sm font-medium text-blue-700 bg-blue-100 rounded-lg hover:bg-blue-200 transition">
+                <a href="{{ route('bib.blade') }}" class="action-button action-button-dark">
                     ← Новая проверка
                 </a>
             </div>
@@ -32,28 +32,28 @@
 
     {{-- Навигационная панель пользователя --}}
     @auth
-        <div class="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 {{ $analysisData ? 'mb-4 lg:shrink-0' : 'mb-6' }}">
+        <div class="page-surface rounded-2xl p-4 {{ $analysisData ? 'mb-4 lg:shrink-0' : 'mb-6' }}">
             <div class="flex items-center justify-between">
                 <div class="flex items-center gap-4">
                     {{-- Аватар и имя --}}
                     <div class="flex items-center gap-3">
-                        <div class="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white font-bold text-lg">
+                        <div class="user-avatar flex h-10 w-10 items-center justify-center rounded-full text-lg font-bold text-white">
                             {{ strtoupper(substr(auth()->user()->name, 0, 1)) }}
                         </div>
                         <div>
-                            <div class="font-bold text-sm">{{ auth()->user()->name }}</div>
-                            <div class="text-xs text-gray-500">
+                            <div class="text-sm font-bold text-slate-900">{{ auth()->user()->name }}</div>
+                            <div class="text-xs text-slate-500">
                                 @if(auth()->user()->isAdmin())
-                                    <span class="inline-block px-2 py-0.5 rounded bg-red-100 text-red-800">Администратор</span>
+                                    <span class="role-pill role-pill-admin">Администратор</span>
                                 @elseif(auth()->user()->isGuest())
-                                    <span class="inline-block px-2 py-0.5 rounded bg-yellow-100 text-yellow-800">Гость</span>
+                                    <span class="role-pill role-pill-guest">Гость</span>
                                     @if(auth()->user()->guest_expires_at)
-                                        <span class="text-yellow-600 ml-1">
+                                        <span class="ml-1 text-amber-600">
                                             ({{ \Carbon\Carbon::now()->diffForHumans(auth()->user()->guest_expires_at, true) }})
                                         </span>
                                     @endif
                                 @else
-                                    <span class="inline-block px-2 py-0.5 rounded bg-green-100 text-green-800">Пользователь</span>
+                                    <span class="role-pill role-pill-user">Пользователь</span>
                                 @endif
                             </div>
                         </div>
@@ -61,9 +61,9 @@
 
                     {{-- API Key индикатор --}}
                     @if(auth()->user()->openalex_api_key)
-                        <div class="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-blue-50 border border-blue-200">
-                            <span class="text-blue-600">🔑</span>
-                            <span class="text-xs text-blue-800">API ключ подключен</span>
+                        <div class="status-chip">
+                            <span class="text-teal-700">🔑</span>
+                            <span class="text-xs font-medium text-slate-700">API ключ подключен</span>
                         </div>
                     @endif
                 </div>
@@ -74,24 +74,24 @@
                         {{-- Кнопки для гостя --}}
                         <form action="{{ route('profile.guest.extend') }}" method="POST" class="inline">
                             @csrf
-                            <button type="submit" class="px-4 py-2 text-sm font-medium text-yellow-700 bg-yellow-50 border border-yellow-200 rounded-lg hover:bg-yellow-100 transition">
+                            <button type="submit" class="action-button action-button-warm">
                                 Продлить сессию
                             </button>
                         </form>
-                        <a href="{{ route('profile.guest.register.form') }}" class="px-4 py-2 text-sm font-medium text-white bg-green-600 rounded-lg hover:bg-green-700 transition">
+                        <a href="{{ route('profile.guest.register.form') }}" class="action-button action-button-dark">
                             Зарегистрироваться
                         </a>
                     @endif
 
                     {{-- Ссылка на профиль --}}
-                    <a href="{{ route('profile.show') }}" class="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition">
+                    <a href="{{ route('profile.show') }}" class="action-button action-button-soft">
                         Профиль
                     </a>
 
                     {{-- Кнопка выхода --}}
                     <form action="{{ route('logout') }}" method="POST" class="inline">
                         @csrf
-                        <button type="submit" class="px-4 py-2 text-sm font-medium text-red-600 bg-red-50 border border-red-200 rounded-lg hover:bg-red-100 transition">
+                        <button type="submit" class="action-button action-button-danger">
                             Выйти
                         </button>
                     </form>
@@ -105,10 +105,10 @@
                     $isExpiringSoon = $remaining < 3600; // Меньше часа
                 @endphp
                 @if($isExpiringSoon)
-                    <div class="mt-3 p-3 rounded-lg bg-yellow-50 border border-yellow-200">
-                        <p class="text-sm text-yellow-800">
+                    <div class="warning-note mt-3 rounded-lg p-3">
+                        <p class="text-sm text-amber-900">
                             ⚠️ Ваша гостевая сессия истекает менее чем через час. 
-                            <a href="{{ route('register') }}" class="font-bold underline hover:text-yellow-900">Зарегистрируйтесь</a>, 
+                            <a href="{{ route('register') }}" class="font-bold underline hover:text-amber-950">Зарегистрируйтесь</a>, 
                             чтобы сохранить данные.
                         </p>
                     </div>
@@ -118,13 +118,16 @@
     @endauth
 
     {{-- Кнопки загрузки --}}
-    <div class="grid grid-cols-2 gap-4 mb-4 text-sm {{ $analysisData ? 'lg:shrink-0' : '' }}">
-        <div class="border-2 border-dashed border-gray-200 rounded-2xl p-4 text-center hover:border-green-500 hover:bg-green-50 cursor-pointer transition">
+    <div class="section-caption {{ $analysisData ? 'lg:shrink-0' : '' }}">
+        Действия с проектом
+    </div>
+    <div class="grid grid-cols-2 gap-4 mb-5 text-sm {{ $analysisData ? 'lg:shrink-0' : '' }}">
+        <div class="upload-card upload-card-create">
             + Создать пустой проект
         </div>
         <form action="{{ route('bib.upload.blade') }}" method="POST" enctype="multipart/form-data">
             @csrf
-            <label class="border-2 border-dashed border-gray-200 rounded-2xl p-4 text-center hover:border-blue-500 hover:bg-blue-50 cursor-pointer transition block">
+            <label class="upload-card upload-card-upload block">
                 <input type="file" name="bib_file" class="hidden" onchange="this.form.submit()">
                 <span>↑ Загрузить файл для проверки</span>
             </label>
@@ -137,7 +140,10 @@
             <div class="grid grid-cols-1 lg:grid-cols-3 gap-8 lg:h-full">
                 {{-- Левая часть: Редактор --}}
                 <div class="lg:col-span-2 flex flex-col lg:h-full lg:min-h-0">
-                    <div class="flex-1 overflow-hidden rounded-2xl border border-gray-100 shadow-sm bg-white lg:min-h-0">
+                    <div class="section-caption mb-3">
+                        Редактор BibTeX
+                    </div>
+                    <div class="flex-1 overflow-hidden lg:min-h-0">
                         <div class="h-full">
                             <x-bib-editor
                                 :content="old('bib_content', $analysisData['raw_content'] ?? '')"
@@ -150,51 +156,21 @@
 
                 {{-- Правая часть: Отчет --}}
                 <div class="flex flex-col space-y-4 lg:h-full lg:min-h-0">
-                    <div class="space-y-4 custom-scrollbar lg:flex-1 lg:min-h-0 lg:overflow-y-auto lg:pr-2">
-                        <div class="p-5 rounded-2xl {{ str_contains($analysisData['course_comparison_result'], 'соответствует') ? 'bg-green-50 text-green-800' : 'bg-red-50 text-red-800' }}">
-                            <h3 class="font-bold mb-2 text-sm">Вердикт:</h3>
-                            <p class="text-xs">{{ $analysisData['course_comparison_result'] }}</p>
+                    <div class="report-panel-header lg:shrink-0">
+                        <div class="section-caption section-caption-tight">
+                            Аналитика и отчет
+                        </div>
+                    </div>
+                    <div class="report-panel-shell custom-scrollbar lg:flex-1 lg:min-h-0 lg:overflow-y-auto lg:pr-2">
+                        <div class="verdict-card p-5 rounded-2xl {{ str_contains($analysisData['course_comparison_result'], 'соответствует') ? 'verdict-card-positive' : 'verdict-card-negative' }}">
+                            <div class="report-block-label">Итог проверки</div>
+                            <h3 class="mb-2 text-sm font-bold">Вердикт</h3>
+                            <p class="text-xs leading-5">{{ $analysisData['course_comparison_result'] }}</p>
                         </div>
 
-                        <div class="bg-white p-5 rounded-2xl border border-gray-100 shadow-sm">
-                            <h3 class="font-bold mb-4 text-sm">Поиск в OpenAlex:</h3>
-                            @if(!empty($analysisData['entries']))
-                            <div class="space-y-3">
-                                @foreach($analysisData['entries'] as $key => $entry)
-                                    @php
-                                        $api = $entry['api_check'] ?? [];
-                                        $found = $api['found'] ?? false;
-                                        $similarity = isset($api['similarity']) ? round($api['similarity']) : null;
-                                        $title = $entry['fields']['title'] ?? 'Без названия';
-                                    @endphp
-                                    <div class="flex items-start gap-3 p-3 rounded-xl {{ $found ? 'bg-green-50' : 'bg-red-50' }}">
-                                        <div class="mt-0.5 text-lg">{{ $found ? '✅' : '❌' }}</div>
-                                        <div class="min-w-0">
-                                            <div class="font-semibold text-sm truncate">{{ $key }}</div>
-                                            <div class="text-xs text-gray-500 truncate" title="{{ $title }}">{{ $title }}</div>
-                                            @if($similarity !== null)
-                                                <span class="inline-block mt-1 text-xs font-bold px-2 py-0.5 rounded {{ $similarity >= 85 ? 'bg-green-200 text-green-800' : ($similarity >= 60 ? 'bg-yellow-200 text-yellow-800' : 'bg-red-200 text-red-800') }}">
-                                                    {{ $similarity }}%
-                                                </span>
-                                            @else
-                                                <div class="text-xs text-gray-400 mt-1">
-                                                    {{ $api['message'] ?? 'Не найдено' }}
-                                                    @if(!empty($api['external_title']))
-                                                        <br>Ближайшее совпадение: <em>{{ $api['external_title'] }}</em>
-                                                    @endif
-                                                </div>
-                                            @endif
-                                        </div>
-                                    </div>
-                                @endforeach
-                            </div>
-                            @else
-                            <p class="text-sm text-gray-500">Результаты поиска в OpenAlex недоступны для этой проверки.</p>
-                            @endif
-                        </div>
-
-                        <div class="bg-white p-5 rounded-2xl border border-gray-100 shadow-sm">
-                            <h3 class="font-bold mb-4 text-sm">Метрики:</h3>
+                        <div class="report-card p-5 rounded-2xl">
+                            <div class="report-block-label">Сводные данные</div>
+                            <h3 class="mb-4 text-sm font-bold text-slate-900">Метрики</h3>
                             @if(!empty($analysisData['aggregated_metrics']))
                             @php
                                 $metricLabels = [
@@ -211,19 +187,57 @@
                                 ];
                             @endphp
                             @foreach($analysisData['aggregated_metrics'] as $key => $value)
-                                <div class="flex justify-between text-sm py-2 border-b border-gray-50 last:border-0">
-                                    <span class="text-gray-500">{{ $metricLabels[$key] ?? $key }}</span>
-                                    <span class="font-bold text-blue-600">{{ $value }}{{ $metricSuffixes[$key] ?? '' }}</span>
+                                <div class="metric-row flex justify-between py-2 text-sm">
+                                    <span class="text-slate-500">{{ $metricLabels[$key] ?? $key }}</span>
+                                    <span class="font-bold text-slate-900">{{ $value }}{{ $metricSuffixes[$key] ?? '' }}</span>
                                 </div>
                             @endforeach
                             @else
-                            <p class="text-sm text-gray-500">Метрики недоступны для этой проверки.</p>
+                            <p class="text-sm text-slate-500">Метрики недоступны для этой проверки.</p>
+                            @endif
+                        </div>
+
+                        <div class="report-card p-5 rounded-2xl">
+                            <div class="report-block-label">Внешняя валидация</div>
+                            <h3 class="mb-4 text-sm font-bold text-slate-900">Поиск в OpenAlex</h3>
+                            @if(!empty($analysisData['entries']))
+                            <div class="space-y-3">
+                                @foreach($analysisData['entries'] as $key => $entry)
+                                    @php
+                                        $api = $entry['api_check'] ?? [];
+                                        $found = $api['found'] ?? false;
+                                        $similarity = isset($api['similarity']) ? round($api['similarity']) : null;
+                                        $title = $entry['fields']['title'] ?? 'Без названия';
+                                    @endphp
+                                    <div class="search-result-item flex items-start gap-3 rounded-xl p-3 {{ $found ? 'search-result-item-found' : 'search-result-item-missing' }}">
+                                        <div class="mt-0.5 text-lg">{{ $found ? '✅' : '❌' }}</div>
+                                        <div class="min-w-0">
+                                            <div class="truncate text-sm font-semibold text-slate-900">{{ $key }}</div>
+                                            <div class="truncate text-xs text-slate-500" title="{{ $title }}">{{ $title }}</div>
+                                            @if($similarity !== null)
+                                                <span class="similarity-chip mt-1 inline-block text-xs font-bold {{ $similarity >= 85 ? 'similarity-chip-high' : ($similarity >= 60 ? 'similarity-chip-medium' : 'similarity-chip-low') }}">
+                                                    {{ $similarity }}%
+                                                </span>
+                                            @else
+                                                <div class="mt-1 text-xs text-slate-400">
+                                                    {{ $api['message'] ?? 'Не найдено' }}
+                                                    @if(!empty($api['external_title']))
+                                                        <br>Ближайшее совпадение: <em>{{ $api['external_title'] }}</em>
+                                                    @endif
+                                                </div>
+                                            @endif
+                                        </div>
+                                    </div>
+                                @endforeach
+                            </div>
+                            @else
+                            <p class="text-sm text-slate-500">Результаты поиска в OpenAlex недоступны для этой проверки.</p>
                             @endif
                         </div>
                     </div>
 
                     <div class="pt-2 lg:shrink-0">
-                        <button type="submit" class="w-full bg-[#00B368] hover:bg-[#009957] text-white py-4 rounded-2xl font-bold shadow-lg transition-all">
+                        <button type="submit" class="primary-submit w-full rounded-2xl py-4 font-bold text-white transition-all">
                             Сохранить изменения
                         </button>
                     </div>
@@ -239,6 +253,291 @@
     </div>
 
     <style>
+        .section-caption {
+            margin-bottom: 0.75rem;
+            font-size: 0.72rem;
+            font-weight: 800;
+            letter-spacing: 0.14em;
+            text-transform: uppercase;
+            color: #94a3b8;
+        }
+
+        .section-caption-tight {
+            margin-bottom: 0.35rem;
+        }
+
+        .page-surface {
+            border: 1px solid rgba(226, 232, 240, 0.9);
+            background: rgba(255, 255, 255, 0.8);
+            box-shadow: 0 20px 36px -34px rgba(15, 23, 42, 0.22);
+            backdrop-filter: blur(14px);
+        }
+
+        .info-surface {
+            border: 1px solid rgba(191, 219, 254, 0.62);
+            background: linear-gradient(135deg, rgba(239, 246, 255, 0.88) 0%, rgba(236, 253, 245, 0.9) 100%);
+            box-shadow: 0 24px 42px -34px rgba(14, 116, 144, 0.32);
+            backdrop-filter: blur(14px);
+        }
+
+        .info-icon {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 2.5rem;
+            height: 2.5rem;
+            border-radius: 0.9rem;
+            background: rgba(255, 255, 255, 0.72);
+            color: #0f766e;
+            box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.85);
+        }
+
+        .user-avatar {
+            background: linear-gradient(135deg, #0f172a 0%, #0f766e 100%);
+            box-shadow: 0 18px 30px -22px rgba(15, 118, 110, 0.42);
+        }
+
+        .role-pill {
+            display: inline-flex;
+            align-items: center;
+            border-radius: 999px;
+            padding: 0.2rem 0.55rem;
+            font-size: 0.72rem;
+            font-weight: 700;
+            letter-spacing: 0.01em;
+        }
+
+        .role-pill-admin {
+            background: #fff1f2;
+            color: #be123c;
+        }
+
+        .role-pill-guest {
+            background: #fffbeb;
+            color: #b45309;
+        }
+
+        .role-pill-user {
+            background: #ecfdf5;
+            color: #0f766e;
+        }
+
+        .status-chip {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            border: 1px solid rgba(153, 246, 228, 0.5);
+            border-radius: 0.9rem;
+            background: rgba(236, 253, 245, 0.8);
+            padding: 0.45rem 0.8rem;
+        }
+
+        .action-button {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 0.8rem;
+            padding: 0.6rem 0.95rem;
+            font-size: 0.875rem;
+            font-weight: 600;
+            transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease;
+        }
+
+        .action-button:hover {
+            transform: translateY(-1px);
+        }
+
+        .action-button-dark {
+            border: 1px solid rgba(15, 23, 42, 0.08);
+            background: linear-gradient(135deg, #0f172a 0%, #1f2937 100%);
+            color: #ffffff;
+            box-shadow: 0 18px 28px -24px rgba(15, 23, 42, 0.55);
+        }
+
+        .action-button-dark:hover {
+            background: linear-gradient(135deg, #111827 0%, #0f766e 100%);
+        }
+
+        .action-button-soft {
+            border: 1px solid rgba(226, 232, 240, 0.95);
+            background: rgba(255, 255, 255, 0.82);
+            color: #334155;
+        }
+
+        .action-button-soft:hover {
+            background: rgba(248, 250, 252, 0.95);
+            border-color: rgba(203, 213, 225, 0.95);
+        }
+
+        .action-button-warm {
+            border: 1px solid rgba(253, 230, 138, 0.72);
+            background: rgba(255, 251, 235, 0.94);
+            color: #b45309;
+        }
+
+        .action-button-warm:hover {
+            background: rgba(254, 243, 199, 0.96);
+        }
+
+        .action-button-danger {
+            border: 1px solid rgba(253, 205, 211, 0.9);
+            background: rgba(255, 241, 242, 0.94);
+            color: #e11d48;
+        }
+
+        .action-button-danger:hover {
+            background: rgba(255, 228, 230, 0.98);
+        }
+
+        .warning-note {
+            border: 1px solid rgba(253, 230, 138, 0.74);
+            background: linear-gradient(135deg, rgba(255, 251, 235, 0.94) 0%, rgba(255, 247, 237, 0.98) 100%);
+        }
+
+        .upload-card {
+            border: 1.5px dashed rgba(203, 213, 225, 0.95);
+            border-radius: 1rem;
+            background: rgba(255, 255, 255, 0.62);
+            padding: 1rem;
+            text-align: center;
+            color: #475569;
+            cursor: pointer;
+            box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.74);
+            transition: border-color 0.2s ease, background-color 0.2s ease, color 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease;
+            backdrop-filter: blur(10px);
+        }
+
+        .upload-card:hover {
+            transform: translateY(-2px);
+            color: #0f172a;
+            box-shadow: 0 18px 34px -34px rgba(15, 23, 42, 0.28);
+        }
+
+        .upload-card-create:hover {
+            border-color: rgba(15, 118, 110, 0.34);
+            background: rgba(240, 253, 250, 0.92);
+        }
+
+        .upload-card-upload:hover {
+            border-color: rgba(59, 130, 246, 0.28);
+            background: rgba(239, 246, 255, 0.92);
+        }
+
+        .report-panel-header {
+            padding: 1rem 1.1rem 0;
+            border: 1px solid rgba(226, 232, 240, 0.8);
+            border-bottom: 0;
+            border-radius: 1.4rem 1.4rem 0 0;
+            background: linear-gradient(180deg, rgba(248, 250, 252, 0.94) 0%, rgba(255, 255, 255, 0.84) 100%);
+        }
+
+        .report-panel-note {
+            margin: 0 0 0.95rem;
+            font-size: 0.82rem;
+            line-height: 1.45;
+            color: #64748b;
+        }
+
+        .report-panel-shell {
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+            padding: 1rem 1.1rem 1.1rem;
+            border: 1px solid rgba(226, 232, 240, 0.8);
+            border-top: 0;
+            border-radius: 0 0 1.4rem 1.4rem;
+            background: rgba(248, 250, 252, 0.55);
+        }
+
+        .verdict-card {
+            border: 1px solid transparent;
+            box-shadow: 0 16px 28px -32px rgba(15, 23, 42, 0.18);
+        }
+
+        .verdict-card-positive {
+            border-color: rgba(167, 243, 208, 0.54);
+            background: linear-gradient(135deg, rgba(236, 253, 245, 0.94) 0%, rgba(240, 253, 250, 0.96) 100%);
+            color: #065f46;
+        }
+
+        .verdict-card-negative {
+            border-color: rgba(253, 164, 175, 0.5);
+            background: linear-gradient(135deg, rgba(255, 241, 242, 0.96) 0%, rgba(255, 247, 237, 0.96) 100%);
+            color: #9f1239;
+        }
+
+        .report-card {
+            border: 1px solid rgba(226, 232, 240, 0.92);
+            background: rgba(255, 255, 255, 0.96);
+            box-shadow: 0 14px 26px -30px rgba(15, 23, 42, 0.14);
+            backdrop-filter: blur(12px);
+        }
+
+        .report-block-label {
+            margin-bottom: 0.45rem;
+            font-size: 0.68rem;
+            font-weight: 800;
+            letter-spacing: 0.14em;
+            text-transform: uppercase;
+            color: #94a3b8;
+        }
+
+        .search-result-item {
+            border: 1px solid rgba(226, 232, 240, 0.72);
+            box-shadow: none;
+        }
+
+        .search-result-item-found {
+            border-color: rgba(167, 243, 208, 0.5);
+            background: linear-gradient(180deg, rgba(236, 253, 245, 0.82) 0%, rgba(255, 255, 255, 0.96) 100%);
+        }
+
+        .search-result-item-missing {
+            border-color: rgba(253, 164, 175, 0.46);
+            background: linear-gradient(180deg, rgba(255, 241, 242, 0.82) 0%, rgba(255, 255, 255, 0.96) 100%);
+        }
+
+        .similarity-chip {
+            border-radius: 999px;
+            padding: 0.2rem 0.55rem;
+        }
+
+        .similarity-chip-high {
+            background: #d1fae5;
+            color: #065f46;
+        }
+
+        .similarity-chip-medium {
+            background: #fef3c7;
+            color: #92400e;
+        }
+
+        .similarity-chip-low {
+            background: #ffe4e6;
+            color: #be123c;
+        }
+
+        .metric-row {
+            border-bottom: 1px solid rgba(241, 245, 249, 0.95);
+            align-items: center;
+            gap: 1rem;
+        }
+
+        .metric-row:last-child {
+            border-bottom: 0;
+        }
+
+        .primary-submit {
+            border: 1px solid rgba(15, 23, 42, 0.06);
+            background: linear-gradient(135deg, #0f172a 0%, #0f766e 100%);
+            box-shadow: 0 24px 40px -28px rgba(15, 118, 110, 0.5);
+        }
+
+        .primary-submit:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 28px 44px -28px rgba(15, 118, 110, 0.58);
+        }
+
         .custom-scrollbar::-webkit-scrollbar {
             width: 6px;
         }
@@ -248,12 +547,28 @@
         }
 
         .custom-scrollbar::-webkit-scrollbar-thumb {
-            background: #e2e8f0;
+            background: #cbd5e1;
             border-radius: 10px;
         }
 
         .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-            background: #cbd5e1;
+            background: #94a3b8;
+        }
+
+        @media (max-width: 1024px) {
+            .report-panel-header {
+                padding: 0;
+                border: 0;
+                border-radius: 0;
+                background: transparent;
+            }
+
+            .report-panel-shell {
+                padding: 0;
+                border: 0;
+                border-radius: 0;
+                background: transparent;
+            }
         }
     </style>
 
