@@ -152,7 +152,7 @@
                     @method('PUT')
 
                     <div>
-                        <label for="openalex_api_key" class="form-label">OpenAlex API key</label>
+                        <a href="https://openalex.org/" target="_blank" rel="noopener noreferrer" for="openalex_api_key" class="form-label">OpenAlex API key</a>
                         <input
                             id="openalex_api_key"
                             name="openalex_api_key"
