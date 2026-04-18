@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\CheckHistory;
+use App\Support\BibEditorViewData;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 
@@ -52,10 +53,7 @@ class CheckHistoryController extends Controller
         $analysisResults['check_id'] = $check->id;
         $analysisResults['check_date'] = $check->created_at->format('d.m.Y H:i');
 
-        return view('bib.editor', [
-            'analysis' => $analysisResults,
-            'checkHistory' => $check,
-        ]);
+        return view('bib.editor', BibEditorViewData::make($analysisResults, $user, $check));
     }
 
     /**

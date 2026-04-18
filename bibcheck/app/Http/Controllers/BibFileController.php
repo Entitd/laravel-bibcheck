@@ -2,18 +2,16 @@
 
 namespace App\Http\Controllers;
 
-use Illuminate\Http\Request;
 use App\Models\BibFile;
 use App\Models\CheckHistory;
-use Illuminate\Support\Facades\Storage;
 use App\Services\BibtexService;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 
 class BibFileController extends Controller
 {
     protected $parserService;
 
-    // Внедряем сервис через конструктор
     public function __construct(BibtexService $parserService)
     {
         $this->parserService = $parserService;
@@ -24,10 +22,10 @@ class BibFileController extends Controller
         $request->validate(['bib_file' => 'required|file']);
         $path = $request->file('bib_file')->store('bib_uploads');
 
-        $bibFile = \App\Models\BibFile::create([
+        $bibFile = BibFile::create([
             'filename' => $request->file('bib_file')->getClientOriginalName(),
             'path' => $path,
-            'status' => 'completed'
+            'status' => 'completed',
         ]);
 
         $content = \Illuminate\Support\Facades\Storage::get($path);
@@ -37,10 +35,8 @@ class BibFileController extends Controller
         $analysisResults['original_filename'] = $bibFile->filename;
         $analysisResults['course_comparison_result'] = $this->generateVerdict($analysisResults['aggregated_metrics']);
 
-        // Сохраняем в историю проверок
         $this->saveToHistory($bibFile->filename, $content, $analysisResults);
 
-        // Возвращаемся назад и кладем результат в сессию
         return redirect()->route('bib.blade')->with('analysis', $analysisResults);
     }
 
@@ -56,23 +52,17 @@ class BibFileController extends Controller
         $analysisResults['original_filename'] = $request->input('original_filename', 'edited_file.bib');
         $analysisResults['course_comparison_result'] = $this->generateVerdict($analysisResults['aggregated_metrics']);
 
-        // Сохраняем в историю проверок
         $this->saveToHistory($analysisResults['original_filename'], $content, $analysisResults);
 
-        // Если это AJAX-запрос, возвращаем только ошибки
         if ($request->expectsJson() || $request->ajax()) {
             return response()->json([
-                'errors' => $analysisResults['errors']
+                'errors' => $analysisResults['errors'],
             ]);
         }
 
-        // Возвращаемся назад и кладем результат в сессию
         return redirect()->route('bib.blade')->with('analysis', $analysisResults);
     }
 
-    /**
-     * Формирует текстовый вердикт на основе агрегированных метрик.
-     */
     private function generateVerdict(array $metrics): string
     {
         $total = $metrics['totalQuantity'] ?? 0;
@@ -85,12 +75,13 @@ class BibFileController extends Controller
         $periodicals = $metrics['numberOfCurrentScientificPeriodicals'] ?? 0;
         $modern = $metrics['Literature21Century'] ?? 0;
         $apiFound = $metrics['api_found'] ?? 0;
+        $apiErrors = $metrics['api_errors'] ?? 0;
         $apiAvgSimilarity = $metrics['api_average_similarity'] ?? 0;
 
         $issues = [];
 
         if ($total < 10) {
-            $issues[] = "мало источников ($total, рекомендуется от 10)";
+            $issues[] = "мало источников ({$total}, рекомендуется от 10)";
         }
         if ($foreign === 0) {
             $issues[] = 'нет источников на иностранных языках';
@@ -101,34 +92,33 @@ class BibFileController extends Controller
         if ($modern === 0) {
             $issues[] = 'нет источников XXI века';
         }
-        if ($apiFound === 0 && $total > 0) {
+        if ($apiErrors > 0) {
+            $issues[] = "ошибки связи с OpenAlex ({$apiErrors})";
+        } elseif ($apiFound === 0 && $total > 0) {
             $issues[] = 'ни один источник не найден в OpenAlex';
         }
 
         if (empty($issues)) {
-            return "Полностью соответствует требованиям. Источников: $total, иностранных: $foreign, периодика: $periodicals, современные: $modern, найдено в OpenAlex: $apiFound (среднее совпадение: {$apiAvgSimilarity}%).";
+            return "Полностью соответствует требованиям. Источников: {$total}, иностранных: {$foreign}, периодика: {$periodicals}, современные: {$modern}, найдено в OpenAlex: {$apiFound} (среднее совпадение: {$apiAvgSimilarity}%).";
         }
 
         return 'Не соответствует требованиям кафедры: ' . implode(', ', $issues) . '.';
     }
 
-    /**
-     * Сохранить результат проверки в историю
-     */
     private function saveToHistory(string $filename, string $content, array $analysisResults): void
     {
         $user = Auth::user();
-        
+
         if (!$user) {
-            return; // Не сохраняем для неавторизованных
+            return;
         }
 
         $metrics = $analysisResults['aggregated_metrics'] ?? [];
         $errors = $analysisResults['errors'] ?? [];
-        
+
         $errorCount = 0;
         $warningCount = 0;
-        
+
         foreach ($errors as $error) {
             if (($error['severity'] ?? 'error') === 'warning') {
                 $warningCount++;
@@ -145,12 +135,11 @@ class BibFileController extends Controller
             'content' => $content,
             'status' => 'completed',
             'stats' => $metrics,
-            'analysis_data' => $analysisResults, // сохраняем все результаты проверки
+            'analysis_data' => $analysisResults,
             'verdict' => $verdict,
             'total_entries' => $metrics['totalQuantity'] ?? 0,
             'error_count' => $errorCount,
             'warning_count' => $warningCount,
         ]);
     }
-
 }

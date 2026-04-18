@@ -12,6 +12,7 @@ use App\Http\Controllers\Admin\BibtexFieldController;
 
 use App\Http\Controllers\Admin\DepartmentController;
 use App\Http\Controllers\ProfileController;
+use App\Support\BibEditorViewData;
 
 use function Pest\Laravel\post;
 
@@ -51,7 +52,9 @@ Route::get('/', function () {
             ->with('error', 'Гостевая сессия истекла. Пожалуйста, войдите снова.');
     }
     
-    return view('bib.editor');
+    $analysis = session('analysis');
+
+    return view('bib.editor', BibEditorViewData::make($analysis, $user));
 })->name('bib.blade');
 
 // Роут для обработки формы именно из Blade

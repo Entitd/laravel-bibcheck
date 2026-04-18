@@ -4,12 +4,6 @@ namespace App\Services\ExternalApi;
 
 class BibValidator
 {
-
-
-
-    /**
-     * Сравнивает две строки на схожесть (0.0 - 1.0)
-     */
     public function calculateSimilarity(string $str1, string $str2): float
     {
         $str1 = mb_strtolower(preg_replace('/[^\p{L}\p{N} ]/u', '', $str1));
@@ -19,13 +13,17 @@ class BibValidator
         return $percent / 100;
     }
 
-    /**
-     * Проверка существования источника через API
-     */
     public function verifySourceOnline(array $fields): array
     {
         if (empty($fields['title'])) {
-            return ['found' => false, 'message' => 'Отсутствует поле title'];
+            return [
+                'found' => false,
+                'status' => 'invalid_input',
+                'similarity' => null,
+                'external_data' => null,
+                'external_title' => null,
+                'message' => 'Отсутствует поле title',
+            ];
         }
 
         $provider = new OpenAlexProvider();
@@ -34,39 +32,60 @@ class BibValidator
 
         $externalData = $provider->findByTitle($fields['title'], $author, $year);
 
-        if (!$externalData) {
+        if (($externalData['status'] ?? null) === 'api_error') {
             return [
                 'found' => false,
-                'message' => "Источник не найден в базе OpenAlex."
+                'status' => 'api_error',
+                'similarity' => null,
+                'external_data' => null,
+                'external_title' => null,
+                'message' => $externalData['message'] ?? 'Не удалось выполнить запрос к OpenAlex.',
             ];
         }
 
-//        dump("externalData:" ,  [$externalData]);
+        if (($externalData['status'] ?? null) === 'not_found') {
+            return [
+                'found' => false,
+                'status' => 'not_found',
+                'similarity' => null,
+                'external_data' => null,
+                'external_title' => null,
+                'message' => $externalData['message'] ?? 'Источник не найден в базе OpenAlex.',
+            ];
+        }
 
-        // Проверяем схожесть названий
-//        $titleSimilarity = $this->calculateSimilarity($fields['title'], $externalData['title']);
+        $match = $externalData['match'] ?? null;
+        $titleSimilarity = $match['similarity'] ?? null;
 
-        $titleSimilarity = $externalData['title'][0]['similarity'];
-//        dump("titleSimilarity:" ,  [$titleSimilarity]);
+        if ($match === null || $titleSimilarity === null) {
+            return [
+                'found' => false,
+                'status' => 'api_error',
+                'similarity' => null,
+                'external_data' => null,
+                'external_title' => null,
+                'message' => 'OpenAlex вернул неполный ответ.',
+            ];
+        }
 
-        // Если название совпадает более чем на 85%, считаем что нашли
         if ($titleSimilarity > 85) {
             return [
                 'found' => true,
-                'external_data' => $externalData,
+                'status' => 'found',
+                'external_data' => $match,
                 'similarity' => $titleSimilarity,
-                'message' => "Источник найден"
+                'external_title' => $match['title'] ?? null,
+                'message' => 'Источник найден',
             ];
         }
 
-        // Возвращаем информацию даже если не нашли — для отладки
         return [
             'found' => false,
+            'status' => 'not_found',
             'similarity' => $titleSimilarity,
-            'external_title' => $externalData['title'],
-            'message' => "Похожий источник найден, но название совпадает лишь на " . round($titleSimilarity) . "%"
+            'external_data' => $match,
+            'external_title' => $match['title'] ?? null,
+            'message' => 'Похожий источник найден, но название совпадает лишь на ' . round($titleSimilarity) . '%',
         ];
     }
-
-
 }

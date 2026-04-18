@@ -5,91 +5,102 @@ namespace App\Services\ExternalApi;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
-class OpenAlexProvider extends Provider{
-
+class OpenAlexProvider extends Provider
+{
     protected $client;
-
-    // public function __construct()
-    // {
-    //     $this->client = Http::withoutVerifying()
-    //         ->timeout(15)
-    //         ->baseUrl(config('services.openalex.url'));
-    // }
-
 
     public function __construct()
     {
         $this->client = Http::withoutVerifying()
-            ->timeout(2)
+            ->timeout(15)
+            ->retry(3, 300)
             ->baseUrl(config('services.openalex.url'))
             ->withOptions([
                 'query' => [
                     'api_key' => config('services.openalex.key'),
-                ]
+                ],
             ]);
     }
 
-    /**
-     * Поиск по заголовку с опциональными автором и годом.
-     */
-    public function findByTitle($title, ?string $author = null, ?string $year = null)
+    public function findByTitle($title, ?string $author = null, ?string $year = null): array
     {
         try {
             $cleanTitle = trim($title);
 
-            // 1. ПЕРВЫЙ ПРОХОД: без флага include_xpac
-            $firstResponse = $this->client->get("works", [
-                'search' => $cleanTitle,
-            ])->json();
-
-            $firstMatch = $this->pickBestMatch($cleanTitle, $firstResponse['results'] ?? []);
-
-            // Если нашли идеальное совпадение (например, > 95%), сразу возвращаем
-                if ($firstMatch && $firstMatch['similarity'] >= 95) {
-                    return ['results' => [$firstMatch]];
+            $firstSearch = $this->searchWorks($cleanTitle);
+            if ($firstSearch['status'] !== 'ok') {
+                return [
+                    'status' => 'api_error',
+                    'match' => null,
+                    'message' => $firstSearch['message'],
+                ];
             }
 
-            // 2. ВТОРОЙ ПРОХОД: если 100% (или 95%+) не нашли, пробуем с include_xpac
-            $xpacResponse = $this->client->get("works", [
-                'search'       => $cleanTitle,
-                'include_xpac' => 'true',
-            ])->json();
+            $firstMatch = $this->pickBestMatch($cleanTitle, $firstSearch['results']);
 
-            $xpacMatch = $this->pickBestMatch($cleanTitle, $xpacResponse['results'] ?? []);
+            if ($firstMatch && $firstMatch['similarity'] >= 95) {
+                return [
+                    'status' => 'found',
+                    'match' => $firstMatch,
+                    'message' => 'Источник найден в OpenAlex.',
+                ];
+            }
 
-            // 3. СРАВНЕНИЕ
+            $xpacSearch = $this->searchWorks($cleanTitle, true);
+            if ($xpacSearch['status'] !== 'ok') {
+                return [
+                    'status' => 'api_error',
+                    'match' => null,
+                    'message' => $xpacSearch['message'],
+                ];
+            }
+
+            $xpacMatch = $this->pickBestMatch($cleanTitle, $xpacSearch['results']);
+
             $bestMatch = null;
 
             if ($firstMatch && $xpacMatch) {
-                // Выбираем тот, где процент сходства выше
                 $bestMatch = ($xpacMatch['similarity'] > $firstMatch['similarity'])
                     ? $xpacMatch
                     : $firstMatch;
             } else {
-                // Если одного из них нет, берем тот, что нашелся
                 $bestMatch = $firstMatch ?: $xpacMatch;
             }
 
-            return ['title' => $bestMatch ? [$bestMatch] : []];
+            if (!$bestMatch) {
+                return [
+                    'status' => 'not_found',
+                    'match' => null,
+                    'message' => 'Источник не найден в базе OpenAlex.',
+                ];
+            }
 
+            return [
+                'status' => 'found',
+                'match' => $bestMatch,
+                'message' => 'Источник найден в OpenAlex.',
+            ];
         } catch (\Throwable $e) {
             Log::error("OpenAlex Double Check failed: {$e->getMessage()}");
-            return null;
+
+            return [
+                'status' => 'api_error',
+                'match' => null,
+                'message' => 'Не удалось выполнить запрос к OpenAlex.',
+            ];
         }
     }
 
-    /**
-     * Выбирает лучшее совпадение из массива результатов по схожести заголовков.
-     */
     public function pickBestMatch(string $cleanTitle, array $results): ?array
     {
-        if (empty($results)) return null;
+        if (empty($results)) {
+            return null;
+        }
 
         $bestMatch = null;
         $bestSimilarity = 0;
 
         foreach ($results as $work) {
-            // У OpenAlex заголовок лежит в $work['title']
             $currentTitle = $work['title'] ?? '';
 
             similar_text(
@@ -98,59 +109,76 @@ class OpenAlexProvider extends Provider{
                 $percent
             );
 
-//            dump("Title: $currentTitle | Score: $percent");
-
             if ($percent > $bestSimilarity) {
                 $bestSimilarity = $percent;
                 $bestMatch = $work;
             }
         }
 
-        // Если сходство слишком низкое, считаем что ничего не нашли
         if ($bestSimilarity < 48) {
-            Log::info("OpenAlex: Сходство слишком низкое: $bestSimilarity%");
+            Log::info("OpenAlex: similarity too low: {$bestSimilarity}%");
             return null;
         }
 
         return [
-            'title'   => $bestMatch['title'],
+            'title' => $bestMatch['title'],
             'authors' => collect($bestMatch['authorships'] ?? [])
-                ->map(fn($a) => $a['author']['display_name'] ?? '')
+                ->map(fn ($a) => $a['author']['display_name'] ?? '')
                 ->filter()
                 ->implode(', '),
-            'year'    => $bestMatch['publication_year'] ?? null,
-            'similarity' => $bestSimilarity
+            'year' => $bestMatch['publication_year'] ?? null,
+            'similarity' => $bestSimilarity,
         ];
     }
 
+    private function searchWorks(string $cleanTitle, bool $includeXpac = false): array
+    {
+        $params = [
+            'search' => $cleanTitle,
+        ];
 
+        if ($includeXpac) {
+            $params['include_xpac'] = 'true';
+        }
 
+        $response = $this->client->get('works', $params);
 
+        if (!$response->successful()) {
+            Log::warning('OpenAlex request failed', [
+                'status' => $response->status(),
+                'title' => $cleanTitle,
+                'include_xpac' => $includeXpac,
+            ]);
 
-    /**
-     * Извлекает фамилию автора из строки "Фамилия, И. О." или "Smith, John".
-     */
+            return [
+                'status' => 'api_error',
+                'results' => [],
+                'message' => "OpenAlex вернул HTTP {$response->status()}.",
+            ];
+        }
+
+        return [
+            'status' => 'ok',
+            'results' => $response->json('results') ?? [],
+            'message' => null,
+        ];
+    }
+
     private function extractLastName(string $author): ?string
     {
-        // Берём первую часть до запятой
         $parts = explode(',', $author, 2);
         $lastName = trim($parts[0]);
 
-        // Если нет запятой — берём последнее слово
         if (empty($lastName)) {
             $words = preg_split('/\s+/', trim($author));
             $lastName = end($words);
         }
 
-        // Только буквы/кириллица, минимум 2 символа
         $lastName = preg_replace('/[^\p{L}\-\.]/u', '', $lastName);
 
         return (mb_strlen($lastName) >= 2) ? $lastName : null;
     }
 
-    /**
-     * Резервный поиск через Crossref API.
-     */
     private function searchCrossref(string $title, ?string $author = null, ?string $year = null): ?array
     {
         try {
@@ -158,7 +186,9 @@ class OpenAlexProvider extends Provider{
                 'query.title' => $title,
                 'rows' => 10,
             ];
-            if ($author) $params['query.author'] = $author;
+            if ($author) {
+                $params['query.author'] = $author;
+            }
 
             $response = Http::timeout(15)->get('https://api.crossref.org/works', $params);
 
@@ -171,34 +201,26 @@ class OpenAlexProvider extends Provider{
             $items = $data['message']['items'] ?? [];
 
             if (empty($items)) {
-                Log::info("Crossref: не найдено по заголовку: $title");
+                Log::info("Crossref: not found by title: {$title}");
                 return null;
             }
 
-            // Фильтруем по году если указан
             if ($year) {
-                $items = array_filter($items, function($item) use ($year) {
+                $items = array_filter($items, function ($item) use ($year) {
                     $itemYear = $item['published-print']['date-parts'][0][0]
                         ?? $item['published-online']['date-parts'][0][0]
-                        ?? $item['created']['date-parts'][0][0] ?? null;
-                    return $itemYear && abs($itemYear - (int)$year) <= 2;
+                        ?? $item['created']['date-parts'][0][0]
+                        ?? null;
+
+                    return $itemYear && abs($itemYear - (int) $year) <= 2;
                 });
             }
 
-            Log::info("Crossref ответ:", [
-                'total' => $data['message']['total-results'] ?? 0,
-                'results' => collect($items)->map(fn($r) => [
-                    'title' => $r['title'][0] ?? '',
-                    'score' => $r['score'] ?? 0,
-                ])->take(5)->toArray()
-            ]);
-
             if (empty($items)) {
-                Log::info("Crossref: не найдено после фильтрации по году ($year)");
+                Log::info("Crossref: nothing left after year filter ({$year})");
                 return null;
             }
 
-            // Выбираем лучшее совпадение
             $cleanTitle = mb_strtolower(preg_replace('/[^\p{L}\p{N}\s\-\.]/u', ' ', $title));
             $cleanTitle = preg_replace('/\s+/', ' ', trim($cleanTitle));
 
@@ -216,7 +238,7 @@ class OpenAlexProvider extends Provider{
             }
 
             if (!$bestMatch || $bestSimilarity < 60) {
-                Log::info("Crossref: лучшее совпадение слишком низкое ({$bestSimilarity}%)");
+                Log::info("Crossref: similarity too low ({$bestSimilarity}%)");
                 return null;
             }
 
@@ -224,26 +246,19 @@ class OpenAlexProvider extends Provider{
             if (!empty($bestMatch['author'])) {
                 foreach ($bestMatch['author'] as $a) {
                     $name = trim(($a['family'] ?? '') . ', ' . ($a['given'] ?? ''));
-                    if ($name) $authorNames[] = trim($name, ', ');
+                    if ($name) {
+                        $authorNames[] = trim($name, ', ');
+                    }
                 }
             }
 
-            Log::info("Crossref: выбрано '{$bestMatch['title'][0]}' (схожесть: {$bestSimilarity}%)");
-
             return [
-                'title'  => $bestMatch['title'][0] ?? '',
+                'title' => $bestMatch['title'][0] ?? '',
                 'authors' => implode(', ', $authorNames),
             ];
-
         } catch (\Throwable $e) {
             Log::error("Crossref request failed: {$e->getMessage()}");
             return null;
         }
     }
-
-
-
-
-
-
 }
