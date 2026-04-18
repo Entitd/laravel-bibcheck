@@ -1,68 +1,193 @@
 <x-layouts.app>
     @section('breadcrumb', 'Вход')
 
-    <div class="min-h-[80vh] flex items-center justify-center">
-        <div class="max-w-md w-full">
-            {{-- Карточка входа --}}
-            <div class="bg-white rounded-2xl border border-gray-100 shadow-lg p-8">
-                <div class="text-center mb-8">
-                    <div class="w-20 h-20 mx-auto mb-4 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white text-3xl">
-                        👋
-                    </div>
-                    <h1 class="text-2xl font-bold mb-2">Добро пожаловать!</h1>
-                    <p class="text-gray-600">Войдите или создайте аккаунт для работы с редактором BibTeX</p>
+    <div class="guest-entry-page min-h-[80vh]">
+        <div class="guest-entry-shell mx-auto flex min-h-[80vh] max-w-3xl items-center justify-center py-8">
+            <section class="guest-card w-full">
+                <div class="guest-card-head">
+                    <div class="guest-icon">B</div>
+                    <div class="guest-kicker">BIBCHECK</div>
                 </div>
 
-                <div class="space-y-4">
-                    {{-- Кнопка входа как гость --}}
-                    <div class="p-4 rounded-xl bg-gradient-to-r from-yellow-50 to-orange-50 border border-yellow-200">
-                        <h3 class="font-bold text-lg mb-2">🔓 Быстрый вход</h3>
-                        <p class="text-sm text-gray-600 mb-4">
-                            Войдите как гость для быстрого доступа. Сессия действует 24 часа.
-                        </p>
-                        <form action="{{ route('guest.login.submit') }}" method="POST">
-                            @csrf
-                            <button type="submit" class="w-full bg-gradient-to-r from-yellow-500 to-orange-500 hover:from-yellow-600 hover:to-orange-600 text-white font-bold py-3 px-6 rounded-xl shadow-lg transition-all transform hover:scale-105">
-                                Войти как гость
-                            </button>
-                        </form>
-                        <p class="text-xs text-gray-500 mt-2 text-center">
-                            ⏱️ Сессия истекает через 24 часа
-                        </p>
-                    </div>
+                <h1 class="guest-title">Выберите способ входа</h1>
+                <p class="guest-subtitle">
+                    Гостевой доступ подойдёт для быстрого старта. Аккаунт нужен, если вы хотите сохранять историю и настройки.
+                </p>
 
-                    {{-- Разделитель --}}
-                    <div class="relative">
-                        <div class="absolute inset-0 flex items-center">
-                            <div class="w-full border-t border-gray-200"></div>
-                        </div>
-                        <div class="relative flex justify-center text-sm">
-                            <span class="px-4 bg-white text-gray-500">или</span>
-                        </div>
-                    </div>
+                <div class="guest-option-card">
+                    <div class="guest-option-label">Быстрый старт</div>
+                    <div class="guest-option-title">Войти как гость</div>
+                    <div class="guest-option-note">Сессия действует 24 часа.</div>
 
-                    {{-- Кнопка регистрации --}}
-                    <a href="{{ route('register') }}" class="block w-full bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 text-white font-bold py-3 px-6 rounded-xl shadow-lg transition-all transform hover:scale-105 text-center">
+                    <form action="{{ route('guest.login.submit') }}" method="POST">
+                        @csrf
+                        <button type="submit" class="guest-primary-button w-full">
+                            Продолжить как гость
+                        </button>
+                    </form>
+                </div>
+
+                <div class="guest-actions">
+                    <a href="{{ route('register') }}" class="guest-secondary-button guest-secondary-button-dark">
                         Создать аккаунт
                     </a>
 
-                    {{-- Кнопка входа --}}
-                    <a href="{{ route('login') }}" class="block w-full bg-gray-100 hover:bg-gray-200 text-gray-800 font-bold py-3 px-6 rounded-xl shadow transition-all text-center">
-                        Войти в существующий аккаунт
+                    <a href="{{ route('login') }}" class="guest-secondary-button guest-secondary-button-soft">
+                        Войти в аккаунт
                     </a>
                 </div>
-            </div>
-
-            {{-- Информационный блок --}}
-            <div class="mt-6 p-4 rounded-xl bg-blue-50 border border-blue-200">
-                <h4 class="font-bold text-sm text-blue-900 mb-2">💡 Преимущества регистрации:</h4>
-                <ul class="text-sm text-blue-800 space-y-1">
-                    <li>✅ Сохранение API ключа OpenAlex</li>
-                    <li>✅ История ваших проектов</li>
-                    <li>✅ Нет ограничений по времени</li>
-                    <li>✅ Персональные настройки</li>
-                </ul>
-            </div>
+            </section>
         </div>
     </div>
+
+    <style>
+        .guest-entry-page {
+            position: relative;
+        }
+
+        .guest-entry-shell {
+            position: relative;
+            z-index: 1;
+        }
+
+        .guest-card {
+            border: 1px solid rgba(226, 232, 240, 0.92);
+            border-radius: 1.9rem;
+            background: rgba(255, 255, 255, 0.88);
+            backdrop-filter: blur(16px);
+            box-shadow: 0 28px 52px -42px rgba(15, 23, 42, 0.24);
+            padding: 1.6rem;
+        }
+
+        .guest-card-head {
+            display: flex;
+            align-items: center;
+            gap: 0.9rem;
+            margin-bottom: 1rem;
+        }
+
+        .guest-icon {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 3rem;
+            height: 3rem;
+            border-radius: 1rem;
+            background: linear-gradient(135deg, #0f172a 0%, #0f766e 100%);
+            color: #ffffff;
+            font-size: 1rem;
+            font-weight: 800;
+            box-shadow: 0 22px 34px -24px rgba(15, 118, 110, 0.42);
+        }
+
+        .guest-kicker,
+        .guest-option-label {
+            font-size: 0.72rem;
+            font-weight: 800;
+            letter-spacing: 0.14em;
+            text-transform: uppercase;
+            color: #94a3b8;
+        }
+
+        .guest-title {
+            margin: 0;
+            font-size: clamp(2rem, 5vw, 3.2rem);
+            line-height: 0.98;
+            letter-spacing: -0.05em;
+            color: #0f172a;
+        }
+
+        .guest-subtitle {
+            margin: 0.95rem 0 1.4rem;
+            max-width: 34rem;
+            font-size: 0.98rem;
+            line-height: 1.7;
+            color: #475569;
+        }
+
+        .guest-option-card {
+            border: 1px solid rgba(226, 232, 240, 0.92);
+            border-radius: 1.4rem;
+            background: linear-gradient(180deg, rgba(248, 250, 252, 0.92) 0%, rgba(255, 255, 255, 0.98) 100%);
+            padding: 1.2rem;
+        }
+
+        .guest-option-title {
+            margin-top: 0.55rem;
+            font-size: 1.08rem;
+            font-weight: 700;
+            color: #0f172a;
+        }
+
+        .guest-option-note {
+            margin: 0.5rem 0 1rem;
+            font-size: 0.9rem;
+            color: #64748b;
+        }
+
+        .guest-actions {
+            display: grid;
+            gap: 0.9rem;
+            margin-top: 1rem;
+        }
+
+        .guest-primary-button,
+        .guest-secondary-button {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 100%;
+            border-radius: 1rem;
+            padding: 0.95rem 1.1rem;
+            font-size: 0.94rem;
+            font-weight: 700;
+            text-align: center;
+            transition: transform 0.2s ease, background-color 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease, color 0.2s ease;
+        }
+
+        .guest-primary-button:hover,
+        .guest-secondary-button:hover {
+            transform: translateY(-1px);
+        }
+
+        .guest-primary-button {
+            border: 1px solid rgba(15, 23, 42, 0.08);
+            background: linear-gradient(135deg, #0f172a 0%, #0f766e 100%);
+            color: #ffffff;
+            box-shadow: 0 24px 40px -28px rgba(15, 118, 110, 0.48);
+        }
+
+        .guest-secondary-button-dark {
+            border: 1px solid rgba(15, 23, 42, 0.08);
+            background: rgba(255, 255, 255, 0.92);
+            color: #0f172a;
+        }
+
+        .guest-secondary-button-dark:hover {
+            border-color: rgba(15, 118, 110, 0.2);
+            background: rgba(240, 253, 250, 0.96);
+        }
+
+        .guest-secondary-button-soft {
+            border: 1px solid rgba(226, 232, 240, 0.95);
+            background: rgba(248, 250, 252, 0.94);
+            color: #475569;
+        }
+
+        .guest-secondary-button-soft:hover {
+            background: rgba(255, 255, 255, 0.98);
+            color: #0f172a;
+        }
+
+        @media (max-width: 640px) {
+            .guest-card {
+                padding: 1.1rem;
+                border-radius: 1.45rem;
+            }
+
+            .guest-title {
+                font-size: 2.1rem;
+            }
+        }
+    </style>
 </x-layouts.app>

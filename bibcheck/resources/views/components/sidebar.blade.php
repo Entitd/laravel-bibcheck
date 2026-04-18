@@ -1,6 +1,14 @@
 @php
     $user = auth()->user();
     $recentChecks = $user ? $user->recentChecks(10) : collect();
+    $guestHoursRemaining = null;
+    $guestExpiringSoon = false;
+
+    if ($user && $user->isGuest() && $user->guest_expires_at) {
+        $guestSecondsRemaining = now()->diffInSeconds($user->guest_expires_at, false);
+        $guestHoursRemaining = max(1, (int) ceil(max($guestSecondsRemaining, 0) / 3600));
+        $guestExpiringSoon = $guestSecondsRemaining < 3600;
+    }
 @endphp
 
 <aside class="app-sidebar flex shrink-0 flex-col border-r border-[#dce5d6] bg-[#e4efdc] p-4">
@@ -95,19 +103,34 @@
 
         <div class="mt-4 pt-4">
             @if($user)
-                <div class="sidebar-profile rounded-full bg-[#edf5e7] px-2 py-2">
+                <div class="sidebar-profile rounded-[1.4rem] px-3 py-3">
                     <div class="flex items-center gap-2">
                         <button
                             type="button"
                             data-sidebar-expand-target="profileMenu"
-                            class="sidebar-profile-trigger flex min-w-0 flex-1 items-center gap-2 rounded-full text-left"
+                            class="sidebar-profile-trigger flex min-w-0 flex-1 items-center gap-3 rounded-2xl text-left"
                         >
-                            <div class="sidebar-icon-slot flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#111111] text-xs font-semibold text-white">
-                                {{ strtoupper(substr($user->name, 0, 2)) }}
+                            <div class="sidebar-user-badge sidebar-icon-slot flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-xs font-semibold text-white">
+                                @if($user->isGuest() && $guestHoursRemaining !== null)
+                                    {{ $guestHoursRemaining }}ч
+                                @else
+                                    {{ strtoupper(substr($user->name, 0, 2)) }}
+                                @endif
                             </div>
                             <div class="sidebar-profile-text min-w-0 flex-1">
                                 <div class="truncate text-sm font-medium text-[#526056]">{{ $user->name }}</div>
-                                <div class="truncate text-xs text-[#8d988f]">{{ $user->email }}</div>
+                                <div class="truncate text-xs text-[#8d988f]">
+                                    @if($user->isAdmin())
+                                        Администратор
+                                    @elseif($user->isGuest())
+                                        Гость
+                                        @if($guestHoursRemaining !== null)
+                                            · ещё {{ $guestHoursRemaining }}ч
+                                        @endif
+                                    @else
+                                        {{ $user->email }}
+                                    @endif
+                                </div>
                             </div>
                         </button>
                         <div class="sidebar-profile-menu dropdown relative">
@@ -115,15 +138,77 @@
                                 <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z"/>
                                 </svg>
-                            </button>
-                            <div id="profileMenu" class="dropdown-menu hidden absolute bottom-full right-0 mb-2 w-44 rounded-xl border border-[#dce5d6] bg-white py-1 shadow-lg">
-                                <a href="{{ route('profile.show') }}" class="block px-4 py-2 text-sm text-slate-700 hover:bg-slate-50">Профиль</a>
+                            </button>       
+                            <div id="profileMenu" class="dropdown-menu sidebar-profile-dropdown hidden absolute bottom-full left-0 mb-2 rounded-2xl border border-[#dce5d6] bg-white p-2 shadow-lg z-50">
+                                <div class="sidebar-menu-card px-3 py-3">
+                                    <div class="flex items-start gap-3">
+                                        <div class="sidebar-user-badge flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-xs font-semibold text-white">
+                                            @if($user->isGuest() && $guestHoursRemaining !== null)
+                                                {{ $guestHoursRemaining }}ч
+                                            @else
+                                                {{ strtoupper(substr($user->name, 0, 2)) }}
+                                            @endif
+                                        </div>
+                                        <div class="min-w-0 flex-1">
+                                            <div class="break-words text-sm font-semibold leading-5 text-slate-900">{{ $user->name }}</div>
+                                            @if(!$user->isGuest())
+                                                <div class="mt-0.5 break-all text-xs leading-5 text-slate-500">{{ $user->email }}</div>
+                                            @endif
+                                            <div class="mt-2 flex flex-wrap gap-2">
+                                                @if($user->isAdmin())
+                                                    <span class="sidebar-role-pill sidebar-role-pill-admin">Администратор</span>
+                                                @elseif($user->isGuest())
+                                                    <span class="sidebar-role-pill sidebar-role-pill-guest">Гость</span>
+                                                @else
+                                                    <span class="sidebar-role-pill sidebar-role-pill-user">Пользователь</span>
+                                                @endif
+
+                                                @if($user->openalex_api_key)
+                                                    <span class="sidebar-inline-chip">🔑 API ключ подключен</span>
+                                                @endif
+                                            </div>
+
+                                            @if($user->isGuest() && $user->guest_expires_at)
+                                                <div class="mt-3 rounded-xl border border-amber-200 bg-amber-50/90 px-3 py-2 text-xs text-amber-900">
+                                                    Сессия хранится ещё {{ $guestHoursRemaining }}ч.
+                                                    @if($guestExpiringSoon)
+                                                        <span class="mt-1 block font-medium">Истекает меньше чем через час.</span>
+                                                    @endif
+                                                </div>
+                                            @endif
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="sidebar-menu-divider my-2"></div>
+
+                                @if($user->isGuest())
+                                    <div class="space-y-2 px-1 pb-2">
+                                        <form action="{{ route('profile.guest.extend') }}" method="POST">
+                                            @csrf
+                                            <button type="submit" class="sidebar-menu-button sidebar-menu-button-warm w-full">
+                                                Продлить сессию
+                                            </button>
+                                        </form>
+                                        <a href="{{ route('profile.guest.register.form') }}" class="sidebar-menu-button sidebar-menu-button-dark w-full">
+                                            Зарегистрироваться
+                                        </a>
+                                    </div>
+
+                                    @if($guestExpiringSoon)
+                                        <div class="mx-1 mb-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+                                            Зарегистрируйтесь, чтобы сохранить данные после окончания гостевой сессии.
+                                        </div>
+                                    @endif
+                                @endif
+
+                                <a href="{{ route('profile.show') }}" class="sidebar-menu-link block rounded-xl px-4 py-2 text-sm text-slate-700 hover:bg-slate-50">Профиль</a>
                                 @if($user->isAdmin())
-                                    <a href="{{ route('admin.dashboard') }}" class="block px-4 py-2 text-sm text-slate-700 hover:bg-slate-50">Админ-панель</a>
+                                    <a href="{{ route('admin.dashboard') }}" class="sidebar-menu-link block rounded-xl px-4 py-2 text-sm text-slate-700 hover:bg-slate-50">Админ-панель</a>
                                 @endif
                                 <form method="POST" action="{{ route('logout') }}">
                                     @csrf
-                                    <button type="submit" class="block w-full px-4 py-2 text-left text-sm text-red-600 hover:bg-red-50">Выйти</button>
+                                    <button type="submit" class="sidebar-menu-link block w-full rounded-xl px-4 py-2 text-left text-sm text-red-600 hover:bg-red-50">Выйти</button>
                                 </form>
                             </div>
                         </div>
@@ -179,6 +264,8 @@ document.addEventListener('DOMContentLoaded', function() {
 
 <style>
 .app-sidebar {
+    position: relative;
+    z-index: 30;
     border-color: rgba(219, 227, 238, 0.92);
     background:
         linear-gradient(180deg, rgba(248, 250, 252, 0.86) 0%, rgba(255, 255, 255, 0.72) 100%);
@@ -269,15 +356,28 @@ nav.overflow-y-auto::-webkit-scrollbar-thumb {
     background: linear-gradient(135deg, #0f172a 0%, #334155 100%);
 }
 
+.sidebar-user-badge {
+    background: linear-gradient(135deg, #0f172a 0%, #0f766e 100%);
+    box-shadow: 0 14px 24px -18px rgba(15, 118, 110, 0.45);
+}
+
 .sidebar-profile-trigger {
     color: var(--page-ink);
 }
 
 .sidebar-profile-menu {
+    position: relative;
+    z-index: 40;
     border-color: #e2e8f0;
     background: rgba(255, 255, 255, 0.96);
     backdrop-filter: blur(18px);
     box-shadow: 0 24px 44px -34px rgba(15, 23, 42, 0.5);
+}
+
+.sidebar-profile-dropdown {
+    width: min(28rem, calc(100vw - 2rem));
+    max-width: calc(100vw - 2rem);
+    z-index: 60;
 }
 
 .sidebar-profile-menu a:hover {
@@ -288,9 +388,88 @@ nav.overflow-y-auto::-webkit-scrollbar-thumb {
     background: #fff1f2;
 }
 
-.sidebar-profile > .sidebar-icon-slot,
-.sidebar-profile a .sidebar-icon-slot {
-    background: linear-gradient(135deg, #0f172a 0%, #334155 100%);
+.sidebar-menu-card {
+    border-radius: 1rem;
+    background: linear-gradient(180deg, rgba(248, 250, 252, 0.88) 0%, rgba(255, 255, 255, 0.96) 100%);
+}
+
+.sidebar-menu-divider {
+    height: 1px;
+    background: rgba(226, 232, 240, 0.95);
+}
+
+.sidebar-role-pill {
+    display: inline-flex;
+    align-items: center;
+    border-radius: 999px;
+    padding: 0.22rem 0.6rem;
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.01em;
+}
+
+.sidebar-role-pill-admin {
+    background: #fff1f2;
+    color: #be123c;
+}
+
+.sidebar-role-pill-guest {
+    background: #fffbeb;
+    color: #b45309;
+}
+
+.sidebar-role-pill-user {
+    background: #ecfdf5;
+    color: #0f766e;
+}
+
+.sidebar-inline-chip {
+    display: inline-flex;
+    align-items: center;
+    border-radius: 999px;
+    background: #f0fdfa;
+    color: #0f766e;
+    padding: 0.22rem 0.6rem;
+    font-size: 0.72rem;
+    font-weight: 600;
+}
+
+.sidebar-menu-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 0.9rem;
+    padding: 0.7rem 0.9rem;
+    font-size: 0.84rem;
+    font-weight: 700;
+    transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease, transform 0.2s ease;
+}
+
+.sidebar-menu-button:hover {
+    transform: translateY(-1px);
+}
+
+.sidebar-menu-button-dark {
+    background: linear-gradient(135deg, #0f172a 0%, #1f2937 100%);
+    color: #ffffff;
+}
+
+.sidebar-menu-button-warm {
+    border: 1px solid rgba(253, 230, 138, 0.72);
+    background: rgba(255, 251, 235, 0.96);
+    color: #b45309;
+}
+
+.sidebar-menu-link {
+    transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+@media (max-width: 1024px) {
+    .sidebar-profile-dropdown {
+        right: 0;
+        width: min(24rem, calc(100vw - 1.5rem));
+        max-width: calc(100vw - 1.5rem);
+    }
 }
 
 .sidebar-icon-slot {
