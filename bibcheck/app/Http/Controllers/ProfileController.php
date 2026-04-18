@@ -6,8 +6,6 @@ use App\Models\User;
 use App\Services\GuestUserService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
-use Inertia\Inertia;
-use Inertia\Response;
 
 class ProfileController extends Controller
 {
@@ -18,11 +16,11 @@ class ProfileController extends Controller
     /**
      * Показать страницу профиля
      */
-    public function show(): Response
+    public function show()
     {
         $user = auth()->user();
-        
-        return Inertia::render('profile/Show', [
+
+        return view('profile.show', [
             'user' => [
                 'id' => $user->id,
                 'name' => $user->name,

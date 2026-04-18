@@ -11,15 +11,20 @@ class OpenAlexProvider extends Provider
 
     public function __construct()
     {
+        $apiKey = auth()->user()?->openalex_api_key ?: config('services.openalex.key');
+
         $this->client = Http::withoutVerifying()
             ->timeout(15)
             ->retry(3, 300)
-            ->baseUrl(config('services.openalex.url'))
-            ->withOptions([
+            ->baseUrl(config('services.openalex.url'));
+
+        if (filled($apiKey)) {
+            $this->client = $this->client->withOptions([
                 'query' => [
-                    'api_key' => config('services.openalex.key'),
+                    'api_key' => $apiKey,
                 ],
             ]);
+        }
     }
 
     public function findByTitle($title, ?string $author = null, ?string $year = null): array
