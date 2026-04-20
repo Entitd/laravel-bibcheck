@@ -289,6 +289,14 @@ class Parser
      */
     private function sanitizeFieldValue(string $fieldName, string $value, int $line): array
     {
+
+        var_dump("fieldName - ");
+        var_dump($fieldName);
+        var_dump("value - ");
+        var_dump($value);
+        var_dump("line - ");
+        var_dump($line);
+
         $error = null;
 
         if (str_ends_with($value, '"') && !str_starts_with($value, '"')) {

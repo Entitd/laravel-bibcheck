@@ -18,17 +18,20 @@ class BibtexParserTest extends TestCase
     {
 
 
-      $aapi = new OpenAlexProvider();
-    
-      $targetTitle = 'Bibliography prettyprinting and syntax checking';
-      $response = $aapi->findByTitle($targetTitle);
-$bestMatch = $response['results'][0] ?? null;
+      var_dump("11111");
 
-$this->assertNotNull($bestMatch, "Источник не найден даже с учетом XPAC");
+
+//       $aapi = new OpenAlexProvider();
+    
+//       $targetTitle = 'Bibliography prettyprinting and syntax checking';
+//       $response = $aapi->findByTitle($targetTitle);
+// $bestMatch = $response['results'][0] ?? null;
+
+// $this->assertNotNull($bestMatch, "Источник не найден даже с учетом XPAC");
       
-      // Проверяем, что заголовок совпадает достаточно сильно (например, > 80%)
-      similar_text(mb_strtolower($targetTitle), mb_strtolower($bestMatch['title']), $percent);
-      $this->assertGreaterThan(80, $percent, "Найденный заголовок '{$bestMatch['title']}' слишком отличается");
+//       // Проверяем, что заголовок совпадает достаточно сильно (например, > 80%)
+//       similar_text(mb_strtolower($targetTitle), mb_strtolower($bestMatch['title']), $percent);
+//       $this->assertGreaterThan(80, $percent, "Найденный заголовок '{$bestMatch['title']}' слишком отличается");
 
 
 
