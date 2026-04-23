@@ -17,7 +17,7 @@ class BibtexService
 
     public function fullCheck(string $bibText): array
     {
-        $data = $this->parser->analyze($bibText);
+        $data = $this->parser->parse($bibText);
 
         $results = [];
 

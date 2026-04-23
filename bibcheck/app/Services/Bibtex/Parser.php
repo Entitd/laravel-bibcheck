@@ -4,41 +4,62 @@ namespace App\Services\Bibtex;
 
 use App\DTO\BibEntryDTO;
 
-/**
- * Парсер
- */
 class Parser
 {
     /**
-     * * @param string $text Содержимое .bib файла
-     * @return array Результаты анализа: метрики, ошибки и вердикт по курсу
+     * Разбирает весь текст bib-файла и возвращает найденные записи и ошибки парсинга.
+     *
+     * На вход получает:
+     * - `$text` — исходное содержимое BibTeX-файла одной строкой.
+     *
+     * Что делает:
+     * - разбивает файл на отдельные BibTeX-записи;
+     * - разбирает каждую запись независимо;
+     * - собирает все ошибки синтаксиса и все успешно распарсенные DTO в один результат.
+     *
+     * Что возвращает:
+     * - массив вида `['error' => array, 'entries' => BibEntryDTO[]]`.
+     *
+     * @param string $text Сырые данные bib-файла.
+     * @return array{error: array, entries: array<int, BibEntryDTO>}
      */
-    public function analyze(string $text): array
+    public function parse(string $text): array
     {
         $rawBlocks = $this->splitIntoBlocks($text);
-        $usedKeys = []; // Это для ключей @article{KEY,
-        $parsedData = $this->parseBlocks($rawBlocks,$usedKeys);
+        $usedKeys = [];
 
-        return $parsedData;
+        return $this->parseBlocks($rawBlocks, $usedKeys);
     }
 
     /**
-     *  Разрезает текст bib-файла на отдельные блоки записей (от @ до конца блока).
-     * * @param string $text Содержимое .bib файла
-     * @return array Массив, где каждый элемент - массив строк одной записи.
+     * Делит сырой BibTeX-текст на блоки записей и сохраняет исходные номера строк.
+     *
+     * На вход получает:
+     * - `$text` — полное содержимое файла.
+     *
+     * Что делает:
+     * - разбивает текст на строки;
+     * - пропускает пустые строки, `%`-комментарии и `@comment`;
+     * - начинает новую запись при встрече строки, начинающейся с `@`;
+     * - сохраняет каждую запись в формате `[номерСтроки => текстСтроки]`.
+     *
+     * Что возвращает:
+     * - массив записей;
+     * - каждая запись — это массив строк, где ключом является исходный номер строки в файле.
+     *
+     * @param string $text Полный текст BibTeX-файла.
+     * @return array<int, array<int, string>>
      */
     private function splitIntoBlocks(string $text): array
     {
-        // Используем preg_split, чтобы не терять символы переноса в логике
-        $lines = explode("\n", $text);
+        $lines = preg_split('/\R/u', $text) ?: [];
         $records = [];
         $recordIndex = -1;
 
         foreach ($lines as $lineNum => $line) {
             $trimmedLine = trim($line);
 
-            // Пропускаем мусор, но сохраняем структуру записи
-            if (empty($trimmedLine) || str_starts_with($trimmedLine, '%') || str_contains($trimmedLine, '@comment')) {
+            if ($trimmedLine === '' || str_starts_with($trimmedLine, '%') || str_starts_with(strtolower($trimmedLine), '@comment')) {
                 continue;
             }
 
@@ -47,56 +68,89 @@ class Parser
             }
 
             if ($recordIndex >= 0) {
-                // ВАЖНО: сохраняем $line целиком (с пробелами в начале), а не $trimmedLine
                 $records[$recordIndex][$lineNum + 1] = $line;
             }
         }
+
         return $records;
     }
 
     /**
-     * Проводит синтаксическую проверку каждого блока записи.
-     * * @param array $rawBlocks Массив разбитых блоков построчно в таком формате: $rawBlocks[0][4] = "year = {2008},"
-     * * @param array $usedKeys Массив пользователем использованных ключей
-     * @return array ['error' => [...], 'zapis' => [...]]
+     * Разбирает все подготовленные блоки записей и объединяет их результат.
+     *
+     * На вход получает:
+     * - `$rawBlocks` — результат работы `splitIntoBlocks()`;
+     * - `$usedKeys` — карту уже встреченных ключей записей, переданную по ссылке.
+     *
+     * Что делает:
+     * - вызывает `parseEntry()` для каждого блока;
+     * - добавляет локальные ошибки каждой записи в общий список;
+     * - собирает все успешно созданные `BibEntryDTO`.
+     *
+     * Что возвращает:
+     * - массив вида `['error' => array, 'entries' => BibEntryDTO[]]`.
+     *
+     * @param array<int, array<int, string>> $rawBlocks Блоки записей, разбитые по строкам.
+     * @param array<string, int> $usedKeys Уже использованные ключи записей.
+     * @return array{error: array, entries: array<int, BibEntryDTO>}
      */
     private function parseBlocks(array $rawBlocks, array &$usedKeys): array
     {
-        $result = ['error' => [], 'entries' => []]; // Поменяли 'zapis' на 'entries'
+        $result = ['error' => [], 'entries' => []];
+
         foreach ($rawBlocks as $block) {
             $report = $this->parseEntry($block, $usedKeys);
 
-            if (!empty($report['error'])) {
+            if (! empty($report['error'])) {
                 $result['error'] = array_merge($result['error'], $report['error']);
             }
 
-            if ($report['entry']) {
-                $result['entries'][] = $report['entry']; // Массив объектов DTO
+            if ($report['entry'] !== null) {
+                $result['entries'][] = $report['entry'];
             }
         }
+
         return $result;
     }
 
     /**
-     * * @param array $recordLines Массив разбитых блоков построчно в таком формате: $rawBlocks[4] = "year = {2008},"
-     * * @param array $usedKeys Массив пользователем использованных ключей
-     * @return array ['error' => [...], 'zapis' => [...]]
+     * Разбирает одну BibTeX-запись в DTO и список локальных ошибок.
+     *
+     * На вход получает:
+     * - `$recordLines` — одну запись в формате `[номерСтроки => текстСтроки]`;
+     * - `$usedKeys` — карту ключей, уже встреченных ранее в файле.
+     *
+     * Что делает:
+     * - разбирает заголовок записи вида `@type{key,`;
+     * - проверяет уникальность ключа записи;
+     * - превращает тело записи в плоский буфер;
+     * - разбирает все поля из этого буфера;
+     * - создаёт `BibEntryDTO`, даже если внутри записи есть исправимые синтаксические ошибки.
+     *
+     * Что возвращает:
+     * - массив вида `['error' => array, 'entry' => ?BibEntryDTO]`;
+     * - `entry` будет `null`, только если не удалось разобрать сам заголовок записи.
+     *
+     * @param array<int, string> $recordLines Одна BibTeX-запись построчно.
+     * @param array<string, int> $usedKeys Уже использованные ключи записей.
+     * @return array{error: array, entry: ?BibEntryDTO}
      */
     private function parseEntry(array $recordLines, array &$usedKeys): array
     {
-        $lineKeys = array_keys($recordLines);
-        $firstLineKey = $lineKeys[0];
+        if ($recordLines === []) {
+            return ['error' => [], 'entry' => null];
+        }
 
-        // 1. Работаем с заголовком
+        $firstLineKey = array_key_first($recordLines);
         $header = $this->extractHeader($recordLines[$firstLineKey], $firstLineKey);
+
         if (isset($header['error'])) {
             return ['error' => [$header['error']], 'entry' => null];
         }
 
         $errors = [];
+        $currentKey = $header['key'];
 
-        // --- ПРОВЕРКА НА УНИКАЛЬНОСТЬ KEY ---
-        $currentKey = $header['key'] ?? null;
         if (isset($usedKeys[$currentKey])) {
             $errors[] = [
                 'severity' => 'error',
@@ -106,80 +160,72 @@ class Parser
                 'length' => strlen($currentKey),
             ];
         } else {
-            // Запоминаем строку первого появления ключа
             $usedKeys[$currentKey] = $firstLineKey;
         }
-        // ------------------------------------
 
-
-        // 2. Подготавливаем плоский буфер и карту строк
         $prepared = $this->prepareBuffer($recordLines, $header, $firstLineKey);
-
-        // 3. Извлекаем поля и проверяем синтаксис
         $fieldResults = $this->processFields(
             $prepared['buffer'],
             $prepared['lineMap'],
-            $header['type'],
             $firstLineKey
         );
 
-        // 4. Добавляем ошибку заголовка, если нет запятой
-        // Внутри parseEntry, заменяем пункт 4:
-        if (!str_contains($header['full_match'], ',')) {
+        if (! $header['has_comma']) {
             array_unshift($fieldResults['errors'], [
                 'severity' => 'syntax',
-                'message' => "Пропущена запятая после ключа записи.",
+                'message' => 'Пропущена запятая после ключа записи.',
                 'line' => $firstLineKey,
-                'column' => strlen($header['full_match']),
-                'length' => 1
+                'column' => $header['body_column'],
+                'length' => 1,
             ]);
         }
 
-        // Собираем финальный результат
-//        $zapis = $fieldResults['zapis'];
-//        $zapis[$firstLineKey][] = ['type' => $header['type'], 'key' => $header['key']];
-//        ksort($zapis);
-//
-//        return [
-//            'error' => array_merge($errors, $fieldResults['errors']),
-//            'zapis' => $zapis
-//        ];
-
-        // СОЗДАЕМ DTO
-        $entryDTO = new \App\DTO\BibEntryDTO(
+        $entryDTO = new BibEntryDTO(
             type: $header['type'],
             key: $header['key'],
-            fields: $fieldResults['foundFieldsValues'], // Плоский массив полей
+            fields: $fieldResults['foundFieldsValues'],
             startLine: $firstLineKey
         );
 
         return [
             'error' => array_merge($errors, $fieldResults['errors']),
-            'entry' => $entryDTO // Возвращаем объект вместо массива zapis
+            'entry' => $entryDTO,
         ];
-
     }
 
-
     /**
-     * * @param array $recordLines Массив разбитых блоков построчно в таком формате: $rawBlocks[4] = "year = {2008},"
-     * * @param array $header
-     * * @param int $firstLineKey
-     * @return array
+     * Превращает многострочную запись в один плоский буфер и карту соответствия offset -> строка.
+     *
+     * На вход получает:
+     * - `$recordLines` — строки одной записи;
+     * - `$header` — метаданные заголовка из `extractHeader()`;
+     * - `$firstLineKey` — номер первой строки записи в исходном файле.
+     *
+     * Что делает:
+     * - отрезает уже разобранную часть заголовка из первой строки;
+     * - склеивает оставшееся тело записи в одну строку-буфер;
+     * - для каждого символа в буфере запоминает, из какой строки файла он пришёл.
+     *
+     * Что возвращает:
+     * - массив вида `['buffer' => string, 'lineMap' => array<int, int>]`.
+     *
+     * @param array<int, string> $recordLines Одна запись построчно.
+     * @param array<string, mixed> $header Результат разбора заголовка.
+     * @param int $firstLineKey Номер первой строки записи.
+     * @return array{buffer: string, lineMap: array<int, int>}
      */
     private function prepareBuffer(array $recordLines, array $header, int $firstLineKey): array
     {
-        $buffer = "";
+        $buffer = '';
         $lineMap = [];
 
         foreach ($recordLines as $lineKey => $line) {
-            // Отрезаем заголовок только на первой строке
-            $text = ($lineKey === $firstLineKey)
-                ? substr($line, strlen($header['full_match']))
+            $text = $lineKey === $firstLineKey
+                ? substr($line, $header['body_offset'])
                 : $line;
 
             $startPos = strlen($buffer);
-            $buffer .= $text . "\n";
+            $buffer .= $text."\n";
             $endPos = strlen($buffer);
 
             for ($i = $startPos; $i < $endPos; $i++) {
@@ -190,153 +236,660 @@ class Parser
         return ['buffer' => $buffer, 'lineMap' => $lineMap];
     }
 
-
     /**
-     * * @param string $buffer
-     * * @param array $lineMap
-     * * @param string $type
-     * * @param int $defaultLine
-     * @return array
+     * Разбирает все поля из плоского буфера записи посимвольно.
+     *
+     * На вход получает:
+     * - `$buffer` — плоское тело записи из `prepareBuffer()`;
+     * - `$lineMap` — карту соответствия позиции в буфере номеру строки файла;
+     * - `$defaultLine` — запасной номер строки, если offset не найден в карте.
+     *
+     * Что делает:
+     * - читает имена полей, знак `=`, значения и разделители по одному токену;
+     * - поддерживает значения в `{...}`, в `"..."` и без обрамления;
+     * - собирает ошибки синтаксиса и дубли полей;
+     * - сохраняет распознанные поля в виде `имяПоля => значение`.
+     *
+     * Что возвращает:
+     * - массив вида
+     *   `['errors' => array, 'foundFieldsValues' => array<string, string>, 'foundFields' => array<string, bool>]`.
+     *
+     * @param string $buffer Плоский текст тела записи.
+     * @param array<int, int> $lineMap Карта позиций буфера к строкам исходного файла.
+     * @param int $defaultLine Резервный номер строки.
+     * @return array{errors: array, foundFieldsValues: array<string, string>, foundFields: array<string, bool>}
      */
-    private function processFields(string $buffer, array $lineMap, string $type, int $defaultLine): array
+    private function processFields(string $buffer, array $lineMap, int $defaultLine): array
     {
         $errors = [];
-        $zapis = [];
+        $foundFieldsValues = [];
         $foundFields = [];
-        $lastMatchEnd = 0;
+        $length = strlen($buffer);
+        $position = 0;
 
-        // Регулярка для поиска полей
-        $pattern = '/(\w+)\s*=\s*(\{.*?\}|".*?"|[^{},\s][^=]*(?=\s*,\s*\w+\s*=|\s*\}|$))/su';
-        preg_match_all($pattern, $buffer, $matches, PREG_SET_ORDER | PREG_OFFSET_CAPTURE);
+        while ($position < $length) {
+            $position = $this->skipWhitespace($buffer, $position);
 
-        foreach ($matches as $match) {
-            $fieldName = strtolower($match[1][0]);
-            $fieldValueRaw = trim($match[2][0]);
-            $fieldOffset = $match[0][1];
-            $fieldEnd = $fieldOffset + strlen($match[0][0]);
-
-            // Находим реальную строку из нашего lineMap
-            $absoluteLine = $lineMap[$fieldOffset] ?? $defaultLine;
-
-            // Считаем колонку: ищем начало текущей строки в буфере
-            $lineStartPos = 0;
-            for ($i = $fieldOffset; $i >= 0; $i--) {
-                if ($buffer[$i] === "\n") {
-                    $lineStartPos = $i + 1;
-                    break;
-                }
-            }
-            $column = ($fieldOffset - $lineStartPos) + 1;
-
-//            var_dump($fieldName, $fieldValueRaw, $absoluteLine);
-            $cleanData = $this->sanitizeFieldValue($fieldName, $fieldValueRaw, $absoluteLine);
-
-            if ($cleanData['error']) {
-                $errors[] = [
-                    'severity' => 'error',
-                    'message' => $cleanData['error'],
-                    'line' => $absoluteLine,
-                    'column' => $column,
-                    'length' => strlen($match[0][0]),
-                ];
+            if ($position >= $length || $buffer[$position] === '}') {
+                break;
             }
 
+            if ($buffer[$position] === ',') {
+                $position++;
+                continue;
+            }
+
+            $fieldOffset = $position;
+            if (! $this->isIdentifierChar($buffer[$position])) {
+                $errors[] = $this->makeSyntaxError(
+                    $buffer,
+                    $lineMap,
+                    $defaultLine,
+                    $fieldOffset,
+                    'Неожиданный символ при разборе поля.',
+                    1
+                );
+                $position++;
+                continue;
+            }
+
+            $fieldName = strtolower($this->readIdentifier($buffer, $position));
+            $position = $this->skipWhitespace($buffer, $position);
+
+            if (($buffer[$position] ?? null) !== '=') {
+                $errors[] = $this->makeSyntaxError(
+                    $buffer,
+                    $lineMap,
+                    $defaultLine,
+                    $position,
+                    "После имени поля '$fieldName' ожидается '='.",
+                    1
+                );
+                $position = $this->recoverToNextFieldBoundary($buffer, $position);
+                continue;
+            }
+
+            $position++;
+            $position = $this->skipWhitespace($buffer, $position);
+
+            [$rawValue, $position, $valueError] = $this->readFieldValue($buffer, $position);
+            if ($valueError !== null) {
+                $errors[] = $this->makeSyntaxError(
+                    $buffer,
+                    $lineMap,
+                    $defaultLine,
+                    $fieldOffset,
+                    $valueError,
+                    max(strlen($fieldName), 1)
+                );
+                $position = $this->recoverToNextFieldBoundary($buffer, $position);
+                continue;
+            }
+
+            if (array_key_exists($fieldName, $foundFieldsValues)) {
+                $errors[] = $this->makeSyntaxError(
+                    $buffer,
+                    $lineMap,
+                    $defaultLine,
+                    $fieldOffset,
+                    "Поле '$fieldName' объявлено повторно.",
+                    strlen($fieldName)
+                );
+                $position = $this->consumeSeparator($buffer, $position);
+                continue;
+            }
+
+            $cleanValue = $this->sanitizeFieldValue($rawValue);
             $foundFields[$fieldName] = true;
-            $zapis[$absoluteLine][] = ['field' => $fieldName, 'value' => $cleanData['value']];
+            $foundFieldsValues[$fieldName] = $cleanValue;
 
-            // Проверка пропущенной запятой
-            if ($lastMatchEnd > 0) {
-                $gap = substr($buffer, $lastMatchEnd, $fieldOffset - $lastMatchEnd);
-                if (!str_contains($gap, ',')) {
-                    $gapLine = $lineMap[$lastMatchEnd] ?? $absoluteLine;
+            $separatorPos = $this->skipWhitespace($buffer, $position);
+            $separator = $buffer[$separatorPos] ?? null;
 
-                    // Расчет колонки для места, где должна быть запятая
-                    $gapLineStart = 0;
-                    for ($i = $lastMatchEnd; $i >= 0; $i--) {
-                        if ($buffer[$i] === "\n") {
-                            $gapLineStart = $i + 1;
-                            break;
-                        }
-                    }
-
-                    $errors[] = [
-                        'severity' => 'syntax',
-                        'message' => "Пропущена запятая перед полем '$fieldName'",
-                        'line' => $gapLine,
-                        'column' => ($lastMatchEnd - $gapLineStart) + 1,
-                        'length' => 1
-                    ];
-                }
+            if ($separator === ',') {
+                $position = $separatorPos + 1;
+                continue;
             }
-            $lastMatchEnd = $fieldEnd;
+
+            if ($separator === '}' || $separator === null) {
+                $position = $separatorPos;
+                continue;
+            }
+
+            $errors[] = $this->makeSyntaxError(
+                $buffer,
+                $lineMap,
+                $defaultLine,
+                $separatorPos,
+                "После поля '$fieldName' ожидается запятая.",
+                1
+            );
+            $position = $separatorPos;
         }
 
-//        return ['errors' => $errors, 'zapis' => $zapis, 'foundFields' => $foundFields];
         return [
             'errors' => $errors,
-            'foundFieldsValues' => collect($zapis)->collapse()->pluck('value', 'field')->toArray(),
+            'foundFieldsValues' => $foundFieldsValues,
             'foundFields' => $foundFields,
         ];
     }
 
-
-
     /**
-     * * @param string $fieldName
-     * * @param string $value
-     * * @param int $line
-     * @return array
+     * Нормализует значение поля перед сохранением в DTO.
+     *
+     * На вход получает:
+     * - `$value` — сырое значение поля ровно в том виде, как оно было прочитано из буфера.
+     *
+     * Что делает:
+     * - обрезает внешние пробелы;
+     * - снимает одну внешнюю пару `{...}` или `"..."`, если она есть;
+     * - оставляет внутреннее содержимое без изменений.
+     *
+     * Что возвращает:
+     * - нормализованное строковое значение поля.
+     *
+     * @param string $value Сырое значение поля.
+     * @return string
      */
-    private function sanitizeFieldValue(string $fieldName, string $value, int $line): array
+    private function sanitizeFieldValue(string $value): string
     {
+        $value = trim($value);
 
-        var_dump("fieldName - ");
-        var_dump($fieldName);
-        var_dump("value - ");
-        var_dump($value);
-        var_dump("line - ");
-        var_dump($line);
-
-        $error = null;
-
-        if (str_ends_with($value, '"') && !str_starts_with($value, '"')) {
-            $error = "СИНТАКСИС (Строка $line): У поля '$fieldName' есть закрывающая кавычка, но нет открывающей.";
-            $value = rtrim($value, '"');
-        } elseif (str_ends_with($value, '}') && !str_starts_with($value, '{')) {
-            $error = "СИНТАКСИС (Строка $line): У поля '$fieldName' есть закрывающая скобка, но нет открывающей.";
-            $value = rtrim($value, '}');
-        } else {
-            $value = preg_replace('/^\{|\}$|^\"|\"$/u', '', $value);
+        if ($value === '') {
+            return '';
         }
 
-        return ['value' => trim($value), 'error' => $error];
+        if (
+            (str_starts_with($value, '{') && str_ends_with($value, '}'))
+            || (str_starts_with($value, '"') && str_ends_with($value, '"'))
+        ) {
+            return trim(substr($value, 1, -1));
+        }
+
+        return trim($value);
     }
 
-
     /**
-     * * @param string $line Первая строка записи
-     * * @param int $lineKey Номер строки
-     * @return array|array[] Массив
+     * Разбирает первую строку записи и извлекает метаданные заголовка.
+     *
+     * На вход получает:
+     * - `$line` — первую строку BibTeX-записи;
+     * - `$lineKey` — номер этой строки в исходном файле.
+     *
+     * Что делает:
+     * - проверяет начало записи вида `@type{key,`;
+     * - извлекает тип записи и её ключ;
+     * - вычисляет, с какой позиции на первой строке начинается тело записи;
+     * - определяет, есть ли запятая после ключа.
+     *
+     * Что возвращает:
+     * - при успехе массив с данными заголовка;
+     * - при ошибке массив вида `['error' => array]`.
+     *
+     * @param string $line Первая строка записи.
+     * @param int $lineKey Номер строки в исходном файле.
+     * @return array<string, mixed>
      */
     private function extractHeader(string $line, int $lineKey): array
     {
-        // Улучшенная регулярка для захвата позиции ключа
-        // Группа 1: тип, Группа 2: ключ
-        if (preg_match('/@(\w+)\s*\{\s*([^,\s\}]+)/i', $line, $matches, PREG_OFFSET_CAPTURE)) {
-            return [
-                'type' => strtolower($matches[1][0]),
-                'key' => trim($matches[2][0]),
-                'key_column' => $matches[2][1] + 1, // Позиция ключа для подсветки
-                'full_match' => $line // Используем всю строку до начала полей
-            ];
+        $length = strlen($line);
+        $position = 0;
+
+        while ($position < $length && ctype_space($line[$position])) {
+            $position++;
         }
+
+        if (($line[$position] ?? null) !== '@') {
+            return $this->makeHeaderError($line, $lineKey);
+        }
+
+        $position++;
+        $typeStart = $position;
+
+        while ($position < $length && $this->isIdentifierChar($line[$position])) {
+            $position++;
+        }
+
+        $type = strtolower(substr($line, $typeStart, $position - $typeStart));
+        if ($type === '') {
+            return $this->makeHeaderError($line, $lineKey);
+        }
+
+        while ($position < $length && ctype_space($line[$position])) {
+            $position++;
+        }
+
+        if (($line[$position] ?? null) !== '{') {
+            return $this->makeHeaderError($line, $lineKey);
+        }
+
+        $position++;
+        while ($position < $length && ctype_space($line[$position])) {
+            $position++;
+        }
+
+        $keyStart = $position;
+        while ($position < $length && ! in_array($line[$position], [',', '}'], true)) {
+            $position++;
+        }
+
+        $key = trim(substr($line, $keyStart, $position - $keyStart));
+        if ($key === '') {
+            return $this->makeHeaderError($line, $lineKey);
+        }
+
+        $hasComma = ($line[$position] ?? null) === ',';
+        $bodyOffset = $hasComma ? $position + 1 : $position;
+        $bodyColumn = $hasComma ? $bodyOffset + 1 : $position + 1;
+
+        return [
+            'type' => $type,
+            'key' => $key,
+            'key_column' => $keyStart + 1,
+            'body_offset' => $bodyOffset,
+            'body_column' => $bodyColumn,
+            'has_comma' => $hasComma,
+        ];
+    }
+
+    /**
+     * Создаёт стандартную ошибку для невалидного заголовка записи.
+     *
+     * На вход получает:
+     * - `$line` — исходную строку заголовка;
+     * - `$lineKey` — номер строки в файле.
+     *
+     * Что возвращает:
+     * - массив вида `['error' => array]`.
+     *
+     * @param string $line Исходная строка заголовка.
+     * @param int $lineKey Номер строки в файле.
+     * @return array{error: array}
+     */
+    private function makeHeaderError(string $line, int $lineKey): array
+    {
         return ['error' => [
             'severity' => 'error',
             'message' => "Неверный формат заголовка. Ожидается '@type{key,'",
             'line' => $lineKey,
             'column' => 1,
-            'length' => strlen($line)
+            'length' => max(strlen($line), 1),
         ]];
     }
-}
 
+    /**
+     * Выбирает нужный способ чтения значения поля по первому символу.
+     *
+     * На вход получает:
+     * - `$buffer` — плоский текст тела записи;
+     * - `$position` — позицию, с которой должно начинаться значение.
+     *
+     * Что делает:
+     * - если значение начинается с `{`, вызывает `readBraceValue()`;
+     * - если с `"`, вызывает `readQuotedValue()`;
+     * - иначе читает значение как bare value через `readBareValue()`.
+     *
+     * Что возвращает:
+     * - массив вида `[rawValue, nextPosition, errorMessage]`.
+     *
+     * @param string $buffer Плоский текст тела записи.
+     * @param int $position Позиция начала значения.
+     * @return array{0: string, 1: int, 2: ?string}
+     */
+    private function readFieldValue(string $buffer, int $position): array
+    {
+        $length = strlen($buffer);
+        if ($position >= $length) {
+            return ['', $position, 'После "=" ожидается значение поля.'];
+        }
+
+        return match ($buffer[$position]) {
+            '{' => $this->readBraceValue($buffer, $position),
+            '"' => $this->readQuotedValue($buffer, $position),
+            default => $this->readBareValue($buffer, $position),
+        };
+    }
+
+    /**
+     * Читает значение в фигурных скобках и поддерживает вложенные скобки.
+     *
+     * На вход получает:
+     * - `$buffer` — плоский текст тела записи;
+     * - `$position` — позицию открывающей `{`.
+     *
+     * Что делает:
+     * - считает глубину вложенности фигурных скобок;
+     * - завершает чтение только на парной закрывающей скобке внешнего уровня.
+     *
+     * Что возвращает:
+     * - массив вида `[rawValue, nextPosition, errorMessage]`.
+     *
+     * @param string $buffer Плоский текст тела записи.
+     * @param int $position Позиция открывающей фигурной скобки.
+     * @return array{0: string, 1: int, 2: ?string}
+     */
+    private function readBraceValue(string $buffer, int $position): array
+    {
+        $length = strlen($buffer);
+        $start = $position;
+        $depth = 0;
+
+        while ($position < $length) {
+            $char = $buffer[$position];
+
+            if ($char === '{') {
+                $depth++;
+            } elseif ($char === '}') {
+                $depth--;
+                if ($depth === 0) {
+                    $position++;
+
+                    return [substr($buffer, $start, $position - $start), $position, null];
+                }
+            }
+
+            $position++;
+        }
+
+        return [substr($buffer, $start), $position, 'У значения в фигурных скобках нет закрывающей скобки.'];
+    }
+
+    /**
+     * Читает значение в кавычках и учитывает экранированные символы.
+     *
+     * На вход получает:
+     * - `$buffer` — плоский текст тела записи;
+     * - `$position` — позицию открывающей кавычки.
+     *
+     * Что делает:
+     * - читает символы до первой неэкранированной закрывающей кавычки;
+     * - корректно пропускает конструкции вроде `\"`.
+     *
+     * Что возвращает:
+     * - массив вида `[rawValue, nextPosition, errorMessage]`.
+     *
+     * @param string $buffer Плоский текст тела записи.
+     * @param int $position Позиция открывающей кавычки.
+     * @return array{0: string, 1: int, 2: ?string}
+     */
+    private function readQuotedValue(string $buffer, int $position): array
+    {
+        $length = strlen($buffer);
+        $start = $position;
+        $position++;
+        $escaped = false;
+
+        while ($position < $length) {
+            $char = $buffer[$position];
+
+            if ($escaped) {
+                $escaped = false;
+                $position++;
+                continue;
+            }
+
+            if ($char === '\\') {
+                $escaped = true;
+                $position++;
+                continue;
+            }
+
+            if ($char === '"') {
+                $position++;
+
+                return [substr($buffer, $start, $position - $start), $position, null];
+            }
+
+            $position++;
+        }
+
+        return [substr($buffer, $start), $position, 'У значения в кавычках нет закрывающей кавычки.'];
+    }
+
+    /**
+     * Читает значение без фигурных скобок и без кавычек.
+     *
+     * На вход получает:
+     * - `$buffer` — плоский текст тела записи;
+     * - `$position` — позицию первого символа значения.
+     *
+     * Что делает:
+     * - читает символы до запятой, закрывающей `}` или конца строки;
+     * - убирает пробелы справа у считанного фрагмента.
+     *
+     * Что возвращает:
+     * - массив вида `[rawValue, nextPosition, errorMessage]`.
+     *
+     * @param string $buffer Плоский текст тела записи.
+     * @param int $position Позиция начала значения.
+     * @return array{0: string, 1: int, 2: ?string}
+     */
+    private function readBareValue(string $buffer, int $position): array
+    {
+        $length = strlen($buffer);
+        $start = $position;
+
+        while ($position < $length) {
+            $char = $buffer[$position];
+
+            if ($char === ',' || $char === '}' || $char === "\n" || $char === "\r") {
+                break;
+            }
+
+            $position++;
+        }
+
+        $value = rtrim(substr($buffer, $start, $position - $start));
+        if ($value === '') {
+            return ['', $position, 'После "=" ожидается значение поля.'];
+        }
+
+        return [$value, $position, null];
+    }
+
+    /**
+     * Превращает внутреннюю ошибку парсера в нормализованный объект синтаксической ошибки.
+     *
+     * На вход получает:
+     * - `$buffer` — плоский текст тела записи;
+     * - `$lineMap` — карту позиций буфера к строкам файла;
+     * - `$defaultLine` — запасной номер строки;
+     * - `$offset` — позицию в буфере, где найдена проблема;
+     * - `$message` — текст ошибки;
+     * - `$length` — длину проблемного фрагмента для подсветки.
+     *
+     * Что возвращает:
+     * - массив с полями `severity`, `message`, `line`, `column`, `length`.
+     *
+     * @param string $buffer Плоский текст тела записи.
+     * @param array<int, int> $lineMap Карта позиций буфера к строкам.
+     * @param int $defaultLine Резервный номер строки.
+     * @param int $offset Позиция ошибки в буфере.
+     * @param string $message Текст ошибки.
+     * @param int $length Длина проблемного фрагмента.
+     * @return array{severity: string, message: string, line: int, column: int, length: int}
+     */
+    private function makeSyntaxError(
+        string $buffer,
+        array $lineMap,
+        int $defaultLine,
+        int $offset,
+        string $message,
+        int $length = 1
+    ): array {
+        $offset = max($offset, 0);
+        $line = $lineMap[$offset] ?? $defaultLine;
+
+        return [
+            'severity' => 'syntax',
+            'message' => $message,
+            'line' => $line,
+            'column' => $this->calculateColumn($buffer, $offset),
+            'length' => max($length, 1),
+        ];
+    }
+
+    /**
+     * Переводит позицию в буфере в номер колонки внутри строки.
+     *
+     * На вход получает:
+     * - `$buffer` — плоский текст тела записи;
+     * - `$offset` — абсолютную позицию внутри буфера.
+     *
+     * Что возвращает:
+     * - номер колонки, начиная с 1.
+     *
+     * @param string $buffer Плоский текст тела записи.
+     * @param int $offset Позиция в буфере.
+     * @return int
+     */
+    private function calculateColumn(string $buffer, int $offset): int
+    {
+        $offset = min(max($offset, 0), strlen($buffer));
+        $lineStartPos = 0;
+
+        for ($i = $offset - 1; $i >= 0; $i--) {
+            if ($buffer[$i] === "\n") {
+                $lineStartPos = $i + 1;
+                break;
+            }
+        }
+
+        return ($offset - $lineStartPos) + 1;
+    }
+
+    /**
+     * Сдвигает курсор вперёд, пропуская пробелы, табы и переводы строк.
+     *
+     * На вход получает:
+     * - `$buffer` — плоский текст тела записи;
+     * - `$position` — текущую позицию курсора.
+     *
+     * Что возвращает:
+     * - новую позицию курсора после пропуска whitespace.
+     *
+     * @param string $buffer Плоский текст тела записи.
+     * @param int $position Текущая позиция.
+     * @return int
+     */
+    private function skipWhitespace(string $buffer, int $position): int
+    {
+        $length = strlen($buffer);
+
+        while ($position < $length && ctype_space($buffer[$position])) {
+            $position++;
+        }
+
+        return $position;
+    }
+
+    /**
+     * Читает идентификатор и двигает курсор по ссылке.
+     *
+     * На вход получает:
+     * - `$buffer` — плоский текст тела записи;
+     * - `$position` — текущую позицию, которая будет изменена по ссылке.
+     *
+     * Что делает:
+     * - читает последовательность из букв, цифр, `_` и `-`;
+     * - останавливается на первом символе, который не входит в идентификатор.
+     *
+     * Что возвращает:
+     * - найденный идентификатор строкой.
+     *
+     * @param string $buffer Плоский текст тела записи.
+     * @param int $position Текущая позиция курсора.
+     * @return string
+     */
+    private function readIdentifier(string $buffer, int &$position): string
+    {
+        $start = $position;
+        $length = strlen($buffer);
+
+        while ($position < $length && $this->isIdentifierChar($buffer[$position])) {
+            $position++;
+        }
+
+        return substr($buffer, $start, $position - $start);
+    }
+
+    /**
+     * Проверяет, допустим ли символ внутри идентификатора.
+     *
+     * На вход получает:
+     * - `$char` — один символ строки.
+     *
+     * Что возвращает:
+     * - `true`, если символ является буквой, цифрой, `_` или `-`;
+     * - иначе `false`.
+     *
+     * @param string $char Один символ.
+     * @return bool
+     */
+    private function isIdentifierChar(string $char): bool
+    {
+        return ctype_alnum($char) || $char === '_' || $char === '-';
+    }
+
+    /**
+     * Перемещает курсор к ближайшей безопасной границе поля после ошибки парсинга.
+     *
+     * На вход получает:
+     * - `$buffer` — плоский текст тела записи;
+     * - `$position` — позицию, с которой нужно начать восстановление.
+     *
+     * Что делает:
+     * - пропускает символы, пока не встретит запятую, перевод строки или `}`;
+     * - позволяет продолжить парсинг со следующей вероятной границы поля.
+     *
+     * Что возвращает:
+     * - новую позицию курсора.
+     *
+     * @param string $buffer Плоский текст тела записи.
+     * @param int $position Текущая позиция.
+     * @return int
+     */
+    private function recoverToNextFieldBoundary(string $buffer, int $position): int
+    {
+        $length = strlen($buffer);
+
+        while ($position < $length) {
+            if (in_array($buffer[$position], [',', "\n", "\r", '}'], true)) {
+                return $position;
+            }
+
+            $position++;
+        }
+
+        return $position;
+    }
+
+    /**
+     * Поглощает необязательную запятую после поля и возвращает следующую позицию курсора.
+     *
+     * На вход получает:
+     * - `$buffer` — плоский текст тела записи;
+     * - `$position` — текущую позицию курсора.
+     *
+     * Что делает:
+     * - пропускает whitespace;
+     * - если следующий значимый символ — запятая, двигается за неё.
+     *
+     * Что возвращает:
+     * - обновлённую позицию курсора.
+     *
+     * @param string $buffer Плоский текст тела записи.
+     * @param int $position Текущая позиция.
+     * @return int
+     */
+    private function consumeSeparator(string $buffer, int $position): int
+    {
+        $position = $this->skipWhitespace($buffer, $position);
+
+        if (($buffer[$position] ?? null) === ',') {
+            return $position + 1;
+        }
+
+        return $position;
+    }
+}

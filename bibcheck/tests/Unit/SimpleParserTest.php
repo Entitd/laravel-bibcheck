@@ -2,55 +2,25 @@
 
 namespace Tests\Unit;
 
-use Tests\TestCase;
 use App\Services\Bibtex\Parser;
-use Illuminate\Foundation\Testing\RefreshDatabase;
+use Tests\TestCase;
 
 class SimpleParserTest extends TestCase
 {
-    use RefreshDatabase;
     /** @test */
-    public function test_it_identifies_missing_required_fields()
+    public function test_it_parses_inline_fields_and_nested_braces(): void
     {
+        $parser = new Parser();
+        $bib = <<<'BIB'
+@article{beebe1993bibliography, title = {A {Very} Complex Title}, year = 1993}
+BIB;
 
-        $service = new Parser();
+        $result = $parser->parse($bib);
 
-        // Передаем статью БЕЗ автора (author - обязателен в твоем массиве)
-        $badBib = <<<PHP
-
-
-        @manual{Oren_Patashnik,
-          abstract = {This document is a systematic reference manual for the Biblatex package},
-          organization = {Lehman, Philipp and Kime, Philipp and Boruvka, Audrey and Wright, Joseph},
-          pagetotal       = 262
-        }
-
-
-
-        PHP;
-
-        var_dump($service->analyze($badBib));
-
-        echo "-------------------------";
-//        print_r($result);
+        $this->assertCount(1, $result['entries']);
+        $this->assertSame([], $result['error']);
+        $this->assertSame('beebe1993bibliography', $result['entries'][0]->key);
+        $this->assertSame('A {Very} Complex Title', $result['entries'][0]->getField('title'));
+        $this->assertSame('1993', $result['entries'][0]->getField('year'));
     }
-
-//    /** @test */
-//    public function test_it_calculates_metrics_correctly()
-//    {
-//        $service = new BibtexParserService();
-//
-//        $bibText = "
-//            @article{test1,
-//                author = {Ivanov}, title = {T1}, journal = {J1}, year = {2022},
-//                pages = {1}, volume = {1}, number = {1}, hyphenation = {english}
-//            }
-//        ";
-//
-//        $result = $service->analyze($bibText);
-//
-//        // Проверяем метрики
-//        $this->assertEquals(1, $result['aggregated_metrics']['totalQuantity']);
-//        $this->assertEquals(1, $result['aggregated_metrics']['amountOfLiteratureInForeignLanguages']);
-//    }
 }
