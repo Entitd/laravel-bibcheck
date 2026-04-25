@@ -1,5 +1,5 @@
 import { Head, Link, router, useForm, usePage } from '@inertiajs/react';
-import { CheckCircle2, FilePlus2, FileText, Search, TriangleAlert, Upload, X } from 'lucide-react';
+import { CheckCircle2, FilePlus2, TriangleAlert, Upload } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import AppLayout from '@/layouts/app-layout';
 import type { BreadcrumbItem } from '@/types';
@@ -31,18 +31,7 @@ type Entry = {
     };
 };
 
-type CheckHistory = {
-    id: number;
-    filename: string;
-    formatted_date?: string;
-    relative_time?: string;
-    total_entries?: number;
-    error_count?: number;
-    warning_count?: number;
-};
-
 type PageProps = {
-    recentChecks?: CheckHistory[];
     flash?: {
         success?: string;
         error?: string;
@@ -95,8 +84,6 @@ export default function BibEditorPage({
 }: BibEditorProps) {
     const page = usePage<PageProps>();
     const flash = page.props.flash;
-    const recentChecks = page.props.recentChecks ?? [];
-    const [historyQuery, setHistoryQuery] = useState('');
     const [liveErrors, setLiveErrors] = useState<AnalysisError[]>(errors);
     const uploadForm = useForm({
         bib_file: null as File | null,
@@ -119,9 +106,6 @@ export default function BibEditorPage({
     }, [analysis?.original_filename, analysis?.raw_content, errors]);
 
     const errorsByLine = useMemo(() => toErrorsMap(liveErrors), [liveErrors]);
-    const filteredHistory = recentChecks.filter((check) =>
-        check.filename.toLowerCase().includes(historyQuery.toLowerCase()),
-    );
     const metricLabels: Record<string, string> = {
         totalQuantity: 'Всего источников',
         amountOfLiteratureInForeignLanguages: 'Иностранные языки',
@@ -221,21 +205,11 @@ export default function BibEditorPage({
         <AppLayout breadcrumbs={breadcrumbs}>
             <Head title="Редактор BibTeX" />
 
-            <div className="grid min-h-[calc(100svh-4rem)] gap-6 p-4 md:grid-cols-[280px_1fr] md:p-6">
-                <aside className="flex flex-col gap-4">
-                    <section className="rounded-3xl border border-border bg-card p-4 shadow-sm">
-                        <div className="flex items-center gap-3">
-                            <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-foreground text-background">
-                                <FileText className="h-5 w-5" />
-                            </div>
-                            <div>
-                                <div className="text-sm font-semibold text-foreground">BIBCHECK</div>
-                                <div className="text-xs text-muted-foreground">Редактор и проверка</div>
-                            </div>
-                        </div>
-
-                        <div className="mt-4 space-y-3">
-                            <label className="flex cursor-pointer items-center justify-center gap-2 rounded-2xl border border-dashed border-border bg-background px-4 py-3 text-sm font-medium text-foreground transition hover:bg-accent">
+            <div className="flex min-h-[calc(100svh-4rem)] flex-col gap-6 p-4 md:p-6">
+                <section className="rounded-3xl border border-border bg-card p-4 shadow-sm">
+                    <div className="flex flex-col gap-4">
+                        <div className="flex w-full flex-col gap-3 sm:flex-row sm:items-center">
+                            <label className="inline-flex w-full flex-1 cursor-pointer items-center justify-center gap-2 rounded-2xl border border-dashed border-border bg-background px-6 py-3 text-sm font-medium text-foreground transition hover:bg-accent">
                                 <Upload className="h-4 w-4" />
                                 <span>Загрузить файл</span>
                                 <input
@@ -254,18 +228,18 @@ export default function BibEditorPage({
                                             '/upload-bib',
                                             { bib_file: file },
                                             {
-                                            forceFormData: true,
-                                            onError: (errors) => {
-                                                if (errors.bib_file) {
-                                                    uploadForm.setError(
-                                                        'bib_file',
-                                                        String(errors.bib_file),
-                                                    );
-                                                }
-                                            },
-                                            onFinish: () => {
-                                                input.value = '';
-                                            },
+                                                forceFormData: true,
+                                                onError: (errors) => {
+                                                    if (errors.bib_file) {
+                                                        uploadForm.setError(
+                                                            'bib_file',
+                                                            String(errors.bib_file),
+                                                        );
+                                                    }
+                                                },
+                                                onFinish: () => {
+                                                    input.value = '';
+                                                },
                                             },
                                         );
                                     }}
@@ -281,65 +255,13 @@ export default function BibEditorPage({
                             <button
                                 type="button"
                                 onClick={() => router.get('/')}
-                                className="inline-flex w-full items-center justify-center rounded-2xl bg-foreground px-4 py-3 text-sm font-semibold text-background transition hover:opacity-90"
+                                className="inline-flex w-full flex-1 cursor-pointer items-center justify-center rounded-2xl bg-foreground px-6 py-3 text-sm font-semibold text-background transition hover:opacity-90"
                             >
                                 Новая проверка
                             </button>
                         </div>
-                    </section>
-
-                    <section className="rounded-3xl border border-border bg-card p-4 shadow-sm">
-                        <label className="relative block">
-                            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                            <input
-                                value={historyQuery}
-                                onChange={(event) => setHistoryQuery(event.target.value)}
-                                placeholder="Найти проверку"
-                                className="w-full rounded-2xl border border-input bg-background py-2.5 pl-10 pr-4 text-sm outline-none transition focus:border-ring focus:ring-2 focus:ring-ring/30"
-                            />
-                        </label>
-
-                        <div className="mt-4 space-y-2">
-                            {filteredHistory.length ? (
-                                filteredHistory.map((check) => (
-                                    <div
-                                        key={check.id}
-                                        className="rounded-2xl border border-border bg-background p-3"
-                                    >
-                                        <Link
-                                            href={`/check-history/${check.id}`}
-                                            className="block text-sm font-medium text-foreground"
-                                        >
-                                            {check.filename}
-                                        </Link>
-                                        <div className="mt-1 text-xs text-muted-foreground">
-                                            {check.relative_time ?? check.formatted_date}
-                                        </div>
-                                        <div className="mt-3 flex items-center justify-between gap-2 text-xs text-muted-foreground">
-                                            <span>
-                                                {check.total_entries ?? 0} записей
-                                            </span>
-                                            <button
-                                                type="button"
-                                                onClick={() =>
-                                                    router.delete(`/api/check-history/${check.id}`)
-                                                }
-                                                className="inline-flex items-center gap-1 text-rose-600 transition hover:text-rose-700"
-                                            >
-                                                <X className="h-3 w-3" />
-                                                <span>Удалить</span>
-                                            </button>
-                                        </div>
-                                    </div>
-                                ))
-                            ) : (
-                                <div className="rounded-2xl border border-dashed border-border bg-background px-4 py-5 text-sm text-muted-foreground">
-                                    История проверок пока пуста.
-                                </div>
-                            )}
-                        </div>
-                    </section>
-                </aside>
+                    </div>
+                </section>
 
                 <div className="flex flex-col gap-6">
                     {flash?.success && (

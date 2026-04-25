@@ -1,5 +1,6 @@
 import { Link, router } from '@inertiajs/react';
-import { LogOut, Settings } from 'lucide-react';
+import { LogIn, LogOut, RefreshCw, Settings, UserPlus } from 'lucide-react';
+import AppearanceToggleTab from '@/components/appearance-tabs';
 import {
     DropdownMenuGroup,
     DropdownMenuItem,
@@ -13,9 +14,10 @@ import type { User } from '@/types';
 
 type Props = {
     user: User;
+    guestSessionDescription?: string | null;
 };
 
-export function UserMenuContent({ user }: Props) {
+export function UserMenuContent({ user, guestSessionDescription }: Props) {
     const cleanup = useMobileNavigation();
 
     const handleLogout = () => {
@@ -23,14 +25,59 @@ export function UserMenuContent({ user }: Props) {
         router.flushAll();
     };
 
+    const handleExtendGuestSession = () => {
+        cleanup();
+        router.post('/profile/guest/extend', {}, { preserveScroll: true });
+    };
+
     return (
         <>
             <DropdownMenuLabel className="p-0 font-normal">
                 <div className="flex items-center gap-2 px-1 py-1.5 text-left text-sm">
-                    <UserInfo user={user} showEmail={true} />
+                    <UserInfo
+                        user={user}
+                        showEmail={true}
+                        description={guestSessionDescription}
+                    />
                 </div>
             </DropdownMenuLabel>
             <DropdownMenuSeparator />
+            <AppearanceToggleTab variant="sidebar" />
+            <DropdownMenuSeparator />
+            {user.is_guest && (
+                <>
+                    <DropdownMenuGroup>
+                        <DropdownMenuItem asChild>
+                            <Link
+                                className="block w-full cursor-pointer"
+                                href="/profile/guest/register"
+                                onClick={cleanup}
+                            >
+                                <UserPlus className="mr-2" />
+                                Зарегистрироваться
+                            </Link>
+                        </DropdownMenuItem>
+                        <DropdownMenuItem asChild>
+                            <Link
+                                className="block w-full cursor-pointer"
+                                href="/profile/guest/login"
+                                onClick={cleanup}
+                            >
+                                <LogIn className="mr-2" />
+                                Войти
+                            </Link>
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                            className="cursor-pointer"
+                            onClick={handleExtendGuestSession}
+                        >
+                            <RefreshCw className="mr-2" />
+                            Обновить таймер
+                        </DropdownMenuItem>
+                    </DropdownMenuGroup>
+                    <DropdownMenuSeparator />
+                </>
+            )}
             <DropdownMenuGroup>
                 <DropdownMenuItem asChild>
                     <Link
@@ -40,7 +87,7 @@ export function UserMenuContent({ user }: Props) {
                         onClick={cleanup}
                     >
                         <Settings className="mr-2" />
-                        Settings
+                        Настройки
                     </Link>
                 </DropdownMenuItem>
             </DropdownMenuGroup>
@@ -54,7 +101,7 @@ export function UserMenuContent({ user }: Props) {
                     data-test="logout-button"
                 >
                     <LogOut className="mr-2" />
-                    Log out
+                    Выйти
                 </Link>
             </DropdownMenuItem>
         </>

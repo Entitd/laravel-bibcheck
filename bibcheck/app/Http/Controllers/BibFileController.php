@@ -104,7 +104,7 @@ class BibFileController extends Controller
     {
         $filename = trim($filename) ?: 'created_file.bib';
         $filename = basename(str_replace(['\\', '/'], DIRECTORY_SEPARATOR, $filename));
-        $filename = preg_replace('/[^A-Za-z0-9._ -]/', '_', $filename) ?: 'created_file.bib';
+        $filename = preg_replace('/[^\p{L}\p{N}._ -]/u', '_', $filename) ?: 'created_file.bib';
 
         return Str::endsWith(Str::lower($filename), '.bib') ? $filename : "{$filename}.bib";
     }

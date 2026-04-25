@@ -5,39 +5,69 @@ import type { Appearance } from '@/hooks/use-appearance';
 import { useAppearance } from '@/hooks/use-appearance';
 import { cn } from '@/lib/utils';
 
+type AppearanceToggleVariant = 'default' | 'auth' | 'sidebar';
+
+const tabs: { value: Appearance; icon: LucideIcon; label: string }[] = [
+    { value: 'light', icon: Sun, label: 'Свет' },
+    { value: 'dark', icon: Moon, label: 'Тьма' },
+    { value: 'system', icon: Monitor, label: 'Авто' },
+];
+
+const activeIndexByAppearance: Record<Appearance, number> = {
+    light: 0,
+    dark: 1,
+    system: 2,
+};
+
 export default function AppearanceToggleTab({
     className = '',
+    variant = 'default',
     ...props
-}: HTMLAttributes<HTMLDivElement>) {
+}: HTMLAttributes<HTMLDivElement> & { variant?: AppearanceToggleVariant }) {
     const { appearance, updateAppearance } = useAppearance();
-
-    const tabs: { value: Appearance; icon: LucideIcon; label: string }[] = [
-        { value: 'light', icon: Sun, label: 'Light' },
-        { value: 'dark', icon: Moon, label: 'Dark' },
-        { value: 'system', icon: Monitor, label: 'System' },
-    ];
+    const activeIndex = activeIndexByAppearance[appearance];
 
     return (
         <div
             className={cn(
-                'inline-flex gap-1 rounded-lg bg-neutral-100 p-1 dark:bg-neutral-800',
+                'relative grid grid-cols-3 rounded-full border p-1 shadow-xs transition-colors',
+                'border-border/70 bg-background/85 text-muted-foreground backdrop-blur',
+                'dark:border-white/10 dark:bg-neutral-950/70',
+                variant === 'auth' &&
+                    'w-full max-w-[17rem] bg-muted/60 dark:bg-neutral-900/70',
+                variant === 'sidebar' &&
+                    'mx-1 mb-1 w-[calc(100%_-_0.5rem)] bg-muted/60 dark:bg-neutral-900/80',
+                variant === 'default' && 'inline-grid min-w-[16rem]',
                 className,
             )}
             {...props}
         >
+            <span
+                className={cn(
+                    'pointer-events-none absolute top-1 bottom-1 left-1 w-[calc((100%_-_0.5rem)/3)] rounded-full shadow-sm transition-transform duration-300 ease-out',
+                    'bg-white ring-1 ring-black/5 dark:bg-neutral-800 dark:ring-white/10',
+                    activeIndex === 0 && 'translate-x-0',
+                    activeIndex === 1 && 'translate-x-full',
+                    activeIndex === 2 && 'translate-x-[200%]',
+                )}
+            />
             {tabs.map(({ value, icon: Icon, label }) => (
                 <button
                     key={value}
+                    type="button"
                     onClick={() => updateAppearance(value)}
                     className={cn(
-                        'flex items-center rounded-md px-3.5 py-1.5 transition-colors',
+                        'relative z-10 flex min-w-0 items-center justify-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-medium transition-colors',
                         appearance === value
-                            ? 'bg-white shadow-xs dark:bg-neutral-700 dark:text-neutral-100'
-                            : 'text-neutral-500 hover:bg-neutral-200/60 hover:text-black dark:text-neutral-400 dark:hover:bg-neutral-700/60',
+                            ? 'text-foreground'
+                            : 'hover:text-foreground',
+                        variant === 'sidebar' && 'px-2 text-xs',
                     )}
+                    aria-pressed={appearance === value}
+                    title={label}
                 >
-                    <Icon className="-ml-1 h-4 w-4" />
-                    <span className="ml-1.5 text-sm">{label}</span>
+                    <Icon className="size-4 shrink-0" />
+                    <span className="truncate">{label}</span>
                 </button>
             ))}
         </div>

@@ -75,6 +75,12 @@ Route::middleware('auth')->group(function () {
         request()->session()->regenerateToken();
         return redirect('/register');
     })->name('profile.guest.register.form');
+    Route::get('/profile/guest/login', function () {
+        auth()->logout();
+        request()->session()->invalidate();
+        request()->session()->regenerateToken();
+        return redirect('/login');
+    })->name('profile.guest.login.form');
     
     // API для истории проверок
     Route::get('/api/check-history', [CheckHistoryController::class, 'index'])->name('check-history.index');

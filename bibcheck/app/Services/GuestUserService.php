@@ -43,7 +43,7 @@ class GuestUserService
         }
 
         $now = Carbon::now();
-        $remaining = $expiresAt->diffInSeconds($now);
+        $remaining = $expiresAt->getTimestamp() - $now->getTimestamp();
 
         if ($remaining <= 0) {
             return null;
