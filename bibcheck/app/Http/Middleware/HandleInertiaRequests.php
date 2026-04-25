@@ -2,6 +2,7 @@
 
 namespace App\Http\Middleware;
 
+use App\Services\GuestUserService;
 use Illuminate\Http\Request;
 use Inertia\Middleware;
 
@@ -35,13 +36,32 @@ class HandleInertiaRequests extends Middleware
      */
     public function share(Request $request): array
     {
+        $user = $request->user();
+        $recentChecks = $user?->recentChecks(10)->map(fn ($check) => [
+            'id' => $check->id,
+            'filename' => $check->filename,
+            'formatted_date' => $check->formatted_date,
+            'relative_time' => $check->relative_time,
+            'total_entries' => $check->total_entries,
+            'error_count' => $check->error_count,
+            'warning_count' => $check->warning_count,
+        ])->values();
+
         return [
             ...parent::share($request),
             'name' => config('app.name'),
             'auth' => [
-                'user' => $request->user(),
+                'user' => $user,
             ],
             'sidebarOpen' => ! $request->hasCookie('sidebar_state') || $request->cookie('sidebar_state') === 'true',
+            'recentChecks' => $recentChecks,
+            'guestSession' => $user && $user->is_guest
+                ? app(GuestUserService::class)->getGuestSessionTimeRemaining($user)
+                : null,
+            'flash' => [
+                'success' => fn () => $request->session()->get('success'),
+                'error' => fn () => $request->session()->get('error'),
+            ],
         ];
     }
 }

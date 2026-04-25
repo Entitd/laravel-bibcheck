@@ -1,6 +1,7 @@
 <?php
 
 use Illuminate\Support\Facades\Route;
+use Inertia\Inertia;
 use Laravel\Fortify\Features;
 
 use App\Http\Controllers\BibFileController;
@@ -20,11 +21,7 @@ Route::get('apiCheck', [\App\Services\ExternalApi\OpenAlexProvider::class, 'find
 
 
 Route::post('/upload-bib', [BibFileController::class, 'upload'])->name('bib.upload');
-
-// Страница с Blade-формой
-//Route::get('/', function () {
-//    return view('analyzer');
-//})->name('bib.blade');
+Route::post('/create-bib', [BibFileController::class, 'create'])->name('bib.create');
 
 /**
  * Маршруты аутентификации (Fortify - автоматически регистрируются):
@@ -54,7 +51,7 @@ Route::get('/', function () {
     
     $analysis = session('analysis');
 
-    return view('bib.editor', BibEditorViewData::make($analysis, $user));
+    return Inertia::render('bib/editor', BibEditorViewData::make($analysis, $user));
 })->name('bib.blade');
 
 // Роут для обработки формы именно из Blade
@@ -92,7 +89,7 @@ Route::get('/guest/login', function () {
         return redirect('/');
     }
     // Показываем страницу выбора входа
-    return view('auth.guest-login');
+    return Inertia::render('auth/guest-login');
 })->name('guest.login');
 
 
@@ -103,7 +100,7 @@ Route::get('/guest/register', function () {
         return redirect('/');
     }
     // Показываем страницу выбора входа
-    return view('register');
+    return redirect('/register');
 })->name('guest.register');
 
 
@@ -113,11 +110,18 @@ Route::post('/guest/login', [ProfileController::class, 'loginAsGuest'])->name('g
 /**
  * Роуты для админки
  */
-Route::prefix('admin')->name('admin.')->group(function () {
+Route::middleware('auth')->prefix('admin')->name('admin.')->group(function () {
 
     // Главная страница админки
     Route::get('/', function () {
-        return view('admin.dashboard');
+        return Inertia::render('admin/dashboard', [
+            'stats' => [
+                'files' => \App\Models\BibFile::count(),
+                'types' => \App\Models\BibtexTypeEntry::count(),
+                'errors' => \App\Models\ValidationError::count() ?? 0,
+                'fields' => \App\Models\BibtexField::count(),
+            ],
+        ]);
     })->name('dashboard');
 
     // Управление типами (BibtexController)

@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\CourseRequirement;
 use App\Models\BibtexTypeEntry;
 use Illuminate\Http\Request;
+use Inertia\Inertia;
 
 class DepartmentController extends Controller
 {
@@ -17,7 +18,7 @@ class DepartmentController extends Controller
         // Получаем типы записей с их обязательными полями
         $types = BibtexTypeEntry::with('fields')->get();
 
-        return view('admin.department.index', compact('requirements', 'types'));
+        return Inertia::render('admin/department/index', compact('requirements', 'types'));
     }
 
     public function updateRequirements(Request $request)

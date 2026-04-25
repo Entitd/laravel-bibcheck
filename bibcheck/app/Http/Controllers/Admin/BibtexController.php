@@ -6,6 +6,8 @@ use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use App\Models\BibtexTypeEntry;
 use App\Models\BibtexField;
+use Inertia\Inertia;
+
 class BibtexController extends Controller
 {
     public function index()
@@ -14,7 +16,7 @@ class BibtexController extends Controller
         $fields = BibtexField::orderBy('name_field')->get(); // Для списка полей и для чекбоксов
 
         // Используем одну вьюху, которую ты скинул
-        return view('admin.bibtex.index', [
+        return Inertia::render('admin/bibtex/index', [
             'types' => $types,
             'fields' => $fields,
             'allFields' => $fields // Для формы создания типа

@@ -11,8 +11,7 @@ class BibtexFieldController extends Controller
     // Просмотр всех полей и форма создания
     public function index()
     {
-        $fields = BibtexField::orderBy('name_field')->get();
-        return view('admin.bibtex', compact('fields'));
+        return redirect()->route('admin.bibtex.index');
     }
 
     // Сохранение нового поля

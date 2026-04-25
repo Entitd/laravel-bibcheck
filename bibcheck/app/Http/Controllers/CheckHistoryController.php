@@ -6,6 +6,7 @@ use App\Models\CheckHistory;
 use App\Support\BibEditorViewData;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Inertia\Inertia;
 
 class CheckHistoryController extends Controller
 {
@@ -53,7 +54,7 @@ class CheckHistoryController extends Controller
         $analysisResults['check_id'] = $check->id;
         $analysisResults['check_date'] = $check->created_at->format('d.m.Y H:i');
 
-        return view('bib.editor', BibEditorViewData::make($analysisResults, $user, $check));
+        return Inertia::render('bib/editor', BibEditorViewData::make($analysisResults, $user, $check));
     }
 
     /**

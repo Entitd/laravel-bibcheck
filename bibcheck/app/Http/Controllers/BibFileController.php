@@ -7,6 +7,8 @@ use App\Models\CheckHistory;
 use App\Services\BibtexService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 
 class BibFileController extends Controller
 {
@@ -17,7 +19,7 @@ class BibFileController extends Controller
         $this->parserService = $parserService;
     }
 
-    public function uploadBlade(Request $request)
+    public function upload(Request $request)
     {
         $request->validate(['bib_file' => 'required|file']);
         $path = $request->file('bib_file')->store('bib_uploads');
@@ -28,7 +30,7 @@ class BibFileController extends Controller
             'status' => 'completed',
         ]);
 
-        $content = \Illuminate\Support\Facades\Storage::get($path);
+        $content = Storage::get($path);
         $analysisResults = $this->parserService->fullCheck($content);
 
         $analysisResults['raw_content'] = $content;
@@ -40,6 +42,41 @@ class BibFileController extends Controller
         return redirect()->route('bib.blade')->with('analysis', $analysisResults);
     }
 
+    public function create(Request $request)
+    {
+        $validated = $request->validate([
+            'bib_content' => 'required|string',
+            'original_filename' => 'required|string|max:255',
+        ]);
+
+        $content = $validated['bib_content'];
+        $filename = $this->normalizeFilename($validated['original_filename']);
+        $path = 'bib_uploads/' . Str::uuid() . '_' . $filename;
+
+        Storage::put($path, $content);
+
+        $bibFile = BibFile::create([
+            'filename' => $filename,
+            'path' => $path,
+            'status' => 'completed',
+        ]);
+
+        $analysisResults = $this->parserService->fullCheck($content);
+
+        $analysisResults['raw_content'] = $content;
+        $analysisResults['original_filename'] = $bibFile->filename;
+        $analysisResults['course_comparison_result'] = $this->generateVerdict($analysisResults['aggregated_metrics']);
+
+        $this->saveToHistory($bibFile->filename, $content, $analysisResults);
+
+        return redirect()->route('bib.blade')->with('analysis', $analysisResults);
+    }
+
+    public function uploadBlade(Request $request)
+    {
+        return $this->upload($request);
+    }
+
     public function update(Request $request)
     {
         $request->validate(['bib_content' => 'required|string']);
@@ -49,7 +86,7 @@ class BibFileController extends Controller
         $analysisResults = $this->parserService->fullCheck($content);
 
         $analysisResults['raw_content'] = $content;
-        $analysisResults['original_filename'] = $request->input('original_filename', 'edited_file.bib');
+        $analysisResults['original_filename'] = $this->normalizeFilename($request->input('original_filename', 'edited_file.bib'));
         $analysisResults['course_comparison_result'] = $this->generateVerdict($analysisResults['aggregated_metrics']);
 
         $this->saveToHistory($analysisResults['original_filename'], $content, $analysisResults);
@@ -61,6 +98,15 @@ class BibFileController extends Controller
         }
 
         return redirect()->route('bib.blade')->with('analysis', $analysisResults);
+    }
+
+    private function normalizeFilename(string $filename): string
+    {
+        $filename = trim($filename) ?: 'created_file.bib';
+        $filename = basename(str_replace(['\\', '/'], DIRECTORY_SEPARATOR, $filename));
+        $filename = preg_replace('/[^A-Za-z0-9._ -]/', '_', $filename) ?: 'created_file.bib';
+
+        return Str::endsWith(Str::lower($filename), '.bib') ? $filename : "{$filename}.bib";
     }
 
     private function generateVerdict(array $metrics): string
