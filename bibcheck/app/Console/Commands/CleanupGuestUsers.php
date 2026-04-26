@@ -26,7 +26,7 @@ class CleanupGuestUsers extends Command
      */
     public function handle()
     {
-        $this->info('🧹 Очистка просроченных гостевых аккаунтов...');
+        $this->info('Очистка просроченных гостевых аккаунтов...');
 
         $query = User::where('is_guest', true)
             ->where('guest_expires_at', '<', now());
@@ -34,7 +34,7 @@ class CleanupGuestUsers extends Command
         $count = $query->count();
 
         if ($count === 0) {
-            $this->info('✅ Просроченных гостевых аккаунтов не найдено.');
+            $this->info('Просроченных гостевых аккаунтов не найдено.');
             return Command::SUCCESS;
         }
 
@@ -42,14 +42,14 @@ class CleanupGuestUsers extends Command
 
         if (!$this->option('force')) {
             if (!$this->confirm('Вы уверены, что хотите удалить эти аккаунты?')) {
-                $this->info('❌ Операция отменена.');
+                $this->info('Операция отменена.');
                 return Command::SUCCESS;
             }
         }
 
         $deleted = $query->delete();
 
-        $this->info("✅ Удалено аккаунтов: {$deleted}");
+        $this->info("Удалено аккаунтов: {$deleted}");
 
         return Command::SUCCESS;
     }
