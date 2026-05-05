@@ -8,7 +8,7 @@ export default function AppHeaderLayout({
     breadcrumbs,
 }: AppLayoutProps) {
     return (
-        <AppShell>
+        <AppShell>фывфыв
             <AppHeader breadcrumbs={breadcrumbs} />
             <AppContent>{children}</AppContent>
         </AppShell>
