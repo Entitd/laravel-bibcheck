@@ -2,6 +2,7 @@
 
 namespace App\Support;
 
+use App\Models\BibtexTypeEntry;
 use App\Models\CheckHistory;
 use App\Models\User;
 
@@ -22,6 +23,17 @@ class BibEditorViewData
         $apiErrorCount = collect($entries)->filter(fn (array $entry) => data_get($entry, 'api_check.status') === 'api_error')->count();
         $averageSimilarity = $metrics['api_average_similarity'] ?? null;
         $courseResult = $analysisData['course_comparison_result'] ?? null;
+        $bibtexTypes = BibtexTypeEntry::query()
+            ->with(['fields' => fn ($query) => $query->orderBy('bibtex_field_bibtex_type_entry.sort_order')->orderBy('name_field')])
+            ->orderBy('name_type_entry')
+            ->get()
+            ->map(fn (BibtexTypeEntry $type) => [
+                'id' => $type->id,
+                'name' => $type->name_type_entry,
+                'fields' => $type->fields->pluck('name_field')->values()->all(),
+            ])
+            ->values()
+            ->all();
         $bibliographyMetrics = [
             [
                 'label' => 'Всего источников',
@@ -58,6 +70,7 @@ class BibEditorViewData
             'courseResult' => $courseResult,
             'isSuccessVerdict' => $courseResult ? str_contains(mb_strtolower($courseResult), 'соответствует') : false,
             'checkHistory' => $checkHistory,
+            'bibtexTypes' => $bibtexTypes,
         ];
     }
 }

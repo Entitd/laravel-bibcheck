@@ -38,6 +38,12 @@ type PageProps = {
     };
 };
 
+type BibtexTypeTemplate = {
+    id: number;
+    name: string;
+    fields: string[];
+};
+
 type BibEditorProps = {
     analysis?: {
         raw_content?: string;
@@ -50,6 +56,7 @@ type BibEditorProps = {
     entries?: Record<string, Entry>;
     metrics?: Record<string, number | string>;
     errors?: AnalysisError[];
+    bibtexTypes?: BibtexTypeTemplate[];
     checkHistory?: {
         id: number;
         filename: string;
@@ -75,11 +82,44 @@ function toErrorsMap(errors: AnalysisError[]) {
     }, {});
 }
 
+function getTypeTrigger(value: string, caretPosition: number) {
+    const beforeCaret = value.slice(0, caretPosition);
+    const match = beforeCaret.match(/(^|\s)(@[a-z_]*)$/i);
+
+    if (!match) {
+        return null;
+    }
+
+    const token = match[2];
+    const query = token.slice(1).toLowerCase();
+
+    return {
+        query,
+        start: beforeCaret.length - token.length,
+        end: beforeCaret.length,
+    };
+}
+
+function buildBibtexSnippet(type: BibtexTypeTemplate) {
+    const key = `${type.name}_key`;
+    const fields = type.fields.map((field) => `  ${field} = {}`).join(',\n');
+    const snippet = fields.length
+        ? `@${type.name}{${key},\n${fields}\n}`
+        : `@${type.name}{${key}\n}`;
+
+    return {
+        snippet,
+        keyStart: type.name.length + 2,
+        keyEnd: type.name.length + 2 + key.length,
+    };
+}
+
 export default function BibEditorPage({
     analysis,
     entries = {},
     metrics = {},
     errors = [],
+    bibtexTypes = [],
     checkHistory,
 }: BibEditorProps) {
     const page = usePage<PageProps>();
@@ -96,6 +136,13 @@ export default function BibEditorPage({
     const lineNumbersRef = useRef<HTMLDivElement | null>(null);
     const contentViewerRef = useRef<HTMLPreElement | null>(null);
     const debounceRef = useRef<number | null>(null);
+    const pendingSelectionRef = useRef<{ start: number; end: number } | null>(null);
+    const [activeSuggestionIndex, setActiveSuggestionIndex] = useState(0);
+    const [typeTrigger, setTypeTrigger] = useState<{
+        query: string;
+        start: number;
+        end: number;
+    } | null>(null);
 
     useEffect(() => {
         setLiveErrors(errors);
@@ -106,6 +153,21 @@ export default function BibEditorPage({
     }, [analysis?.original_filename, analysis?.raw_content, errors]);
 
     const errorsByLine = useMemo(() => toErrorsMap(liveErrors), [liveErrors]);
+    const suggestedTypes = useMemo(() => {
+        if (!typeTrigger) {
+            return [];
+        }
+
+        const normalizedQuery = typeTrigger.query.trim();
+
+        return bibtexTypes
+            .filter((type) =>
+                normalizedQuery.length === 0
+                    ? true
+                    : type.name.toLowerCase().startsWith(normalizedQuery),
+            )
+            .slice(0, 8);
+    }, [bibtexTypes, typeTrigger]);
     const metricLabels: Record<string, string> = {
         totalQuantity: 'Всего источников',
         amountOfLiteratureInForeignLanguages: 'Иностранные языки',
@@ -127,6 +189,51 @@ export default function BibEditorPage({
             }
         };
     }, []);
+
+    useEffect(() => {
+        if (!suggestedTypes.length) {
+            setActiveSuggestionIndex(0);
+            return;
+        }
+
+        setActiveSuggestionIndex((currentIndex) =>
+            Math.min(currentIndex, suggestedTypes.length - 1),
+        );
+    }, [suggestedTypes]);
+
+    useEffect(() => {
+        if (!pendingSelectionRef.current || !textareaRef.current) {
+            return;
+        }
+
+        const { start, end } = pendingSelectionRef.current;
+        textareaRef.current.focus();
+        textareaRef.current.setSelectionRange(start, end);
+        pendingSelectionRef.current = null;
+    }, [updateForm.data.bib_content]);
+
+    const applyTypeSuggestion = (type: BibtexTypeTemplate) => {
+        if (!typeTrigger) {
+            return;
+        }
+
+        const { snippet, keyStart, keyEnd } = buildBibtexSnippet(type);
+        const nextValue =
+            updateForm.data.bib_content.slice(0, typeTrigger.start) +
+            snippet +
+            updateForm.data.bib_content.slice(typeTrigger.end);
+        const selectionStart = typeTrigger.start + keyStart;
+        const selectionEnd = typeTrigger.start + keyEnd;
+
+        pendingSelectionRef.current = {
+            start: selectionStart,
+            end: selectionEnd,
+        };
+
+        updateForm.setData('bib_content', nextValue);
+        setTypeTrigger(null);
+        analyzeText(nextValue);
+    };
 
     const syncScroll = () => {
         if (!textareaRef.current || !lineNumbersRef.current || !contentViewerRef.current) {
@@ -389,8 +496,70 @@ export default function BibEditorPage({
                                                 spellCheck={false}
                                                 value={updateForm.data.bib_content}
                                                 onChange={(event) => {
-                                                    updateForm.setData('bib_content', event.target.value);
-                                                    analyzeText(event.target.value);
+                                                    const nextValue = event.target.value;
+                                                    updateForm.setData('bib_content', nextValue);
+                                                    setTypeTrigger(
+                                                        getTypeTrigger(
+                                                            nextValue,
+                                                            event.target.selectionStart ?? nextValue.length,
+                                                        ),
+                                                    );
+                                                    analyzeText(nextValue);
+                                                }}
+                                                onClick={(event) =>
+                                                    setTypeTrigger(
+                                                        getTypeTrigger(
+                                                            event.currentTarget.value,
+                                                            event.currentTarget.selectionStart ??
+                                                                event.currentTarget.value.length,
+                                                        ),
+                                                    )
+                                                }
+                                                onKeyUp={(event) =>
+                                                    setTypeTrigger(
+                                                        getTypeTrigger(
+                                                            event.currentTarget.value,
+                                                            event.currentTarget.selectionStart ??
+                                                                event.currentTarget.value.length,
+                                                        ),
+                                                    )
+                                                }
+                                                onBlur={() => {
+                                                    window.setTimeout(() => setTypeTrigger(null), 120);
+                                                }}
+                                                onKeyDown={(event) => {
+                                                    if (!suggestedTypes.length) {
+                                                        return;
+                                                    }
+
+                                                    if (event.key === 'ArrowDown') {
+                                                        event.preventDefault();
+                                                        setActiveSuggestionIndex(
+                                                            (currentIndex) =>
+                                                                (currentIndex + 1) %
+                                                                suggestedTypes.length,
+                                                        );
+                                                    }
+
+                                                    if (event.key === 'ArrowUp') {
+                                                        event.preventDefault();
+                                                        setActiveSuggestionIndex(
+                                                            (currentIndex) =>
+                                                                (currentIndex - 1 + suggestedTypes.length) %
+                                                                suggestedTypes.length,
+                                                        );
+                                                    }
+
+                                                    if (event.key === 'Tab' || event.key === 'Enter') {
+                                                        event.preventDefault();
+                                                        applyTypeSuggestion(
+                                                            suggestedTypes[activeSuggestionIndex],
+                                                        );
+                                                    }
+
+                                                    if (event.key === 'Escape') {
+                                                        setTypeTrigger(null);
+                                                    }
                                                 }}
                                                 onScroll={syncScroll}
                                                 placeholder={`@book{key,
@@ -400,6 +569,44 @@ export default function BibEditorPage({
 }`}
                                                 className="relative h-full min-h-[520px] w-full resize-none overflow-auto bg-transparent p-4 font-mono text-sm leading-6 text-foreground outline-none"
                                             />
+                                            {suggestedTypes.length > 0 && (
+                                                <div className="absolute right-4 bottom-4 z-20 w-full max-w-md rounded-2xl border border-border bg-background/95 p-2 shadow-xl backdrop-blur">
+                                                    <div className="px-2 pb-2 text-[11px] font-medium uppercase tracking-[0.12em] text-muted-foreground">
+                                                        BibTeX types from database
+                                                    </div>
+                                                    <div className="space-y-1">
+                                                        {suggestedTypes.map((type, index) => (
+                                                            <button
+                                                                key={type.id}
+                                                                type="button"
+                                                                onMouseDown={(event) => {
+                                                                    event.preventDefault();
+                                                                    applyTypeSuggestion(type);
+                                                                }}
+                                                                className={`flex w-full items-start justify-between gap-3 rounded-xl px-3 py-2 text-left transition ${
+                                                                    index === activeSuggestionIndex
+                                                                        ? 'bg-accent text-accent-foreground'
+                                                                        : 'hover:bg-muted'
+                                                                }`}
+                                                            >
+                                                                <div className="min-w-0">
+                                                                    <div className="font-mono text-sm font-semibold">
+                                                                        @{type.name}
+                                                                    </div>
+                                                                    <div className="mt-1 text-xs text-muted-foreground">
+                                                                        {type.fields.length
+                                                                            ? type.fields.join(', ')
+                                                                            : 'No fields configured'}
+                                                                    </div>
+                                                                </div>
+                                                                <div className="shrink-0 rounded-full border border-border px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+                                                                    {type.fields.length} fields
+                                                                </div>
+                                                            </button>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                            )}
                                         </div>
                                     </div>
                                 </div>
