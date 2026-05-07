@@ -14,9 +14,8 @@ class UserSeeder extends Seeder
     public function run(): void
     {
         // Создаем администратора
-        User::factory()->create([
+        User::updateOrCreate(['email' => 'admin@bibcheck.local'], [
             'name' => 'Администратор',
-            'email' => 'admin@bibcheck.local',
             'password' => bcrypt('admin123'),
             'role' => User::ROLE_ADMIN,
             'is_guest' => false,
@@ -24,9 +23,8 @@ class UserSeeder extends Seeder
         ]);
 
         // Создаем обычного пользователя
-        User::factory()->create([
+        User::updateOrCreate(['email' => 'user@bibcheck.local'], [
             'name' => 'Пользователь',
-            'email' => 'user@bibcheck.local',
             'password' => bcrypt('user123'),
             'role' => User::ROLE_USER,
             'is_guest' => false,
@@ -34,9 +32,8 @@ class UserSeeder extends Seeder
         ]);
 
         // Создаем еще одного пользователя
-        User::factory()->create([
+        User::updateOrCreate(['email' => 'ivan@example.com'], [
             'name' => 'Иван Петров',
-            'email' => 'ivan@example.com',
             'password' => bcrypt('password123'),
             'role' => User::ROLE_USER,
             'is_guest' => false,
@@ -44,9 +41,8 @@ class UserSeeder extends Seeder
         ]);
 
         // Создаем тестового гостя (не просроченного)
-        User::factory()->create([
+        User::updateOrCreate(['email' => 'guest_test@guest.local'], [
             'name' => 'Гость_Тест',
-            'email' => 'guest_test@guest.local',
             'password' => bcrypt(Str::random(32)),
             'role' => User::ROLE_GUEST,
             'is_guest' => true,
@@ -54,9 +50,8 @@ class UserSeeder extends Seeder
         ]);
 
         // Создаем просроченного гостя (для тестирования очистки)
-        User::factory()->create([
+        User::updateOrCreate(['email' => 'guest_expired@guest.local'], [
             'name' => 'Гость_Просрочен',
-            'email' => 'guest_expired@guest.local',
             'password' => bcrypt(Str::random(32)),
             'role' => User::ROLE_GUEST,
             'is_guest' => true,
