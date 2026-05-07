@@ -6,7 +6,7 @@ import type { BreadcrumbItem } from '@/types';
 
 const breadcrumbs: BreadcrumbItem[] = [
     {
-        title: 'Редактор BibTeX',
+        title: 'Редактор BibLaTeX',
         href: '/',
     },
 ];
@@ -310,7 +310,7 @@ export default function BibEditorPage({
 
     return (
         <AppLayout breadcrumbs={breadcrumbs}>
-            <Head title="Редактор BibTeX" />
+            <Head title="Редактор BibLaTeX" />
 
             <div className="flex min-h-[calc(100svh-4rem)] flex-col gap-6 p-4 md:p-6">
                 <section className="rounded-3xl border border-border bg-card p-4 shadow-sm">
