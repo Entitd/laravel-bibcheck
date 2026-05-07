@@ -54,6 +54,16 @@ Route::get('/', function () {
     return Inertia::render('bib/editor', BibEditorViewData::make($analysis, $user));
 })->name('bib.blade');
 
+Route::middleware('auth')->get('/dashboard', function () {
+    $user = auth()->user();
+
+    if ($user->isAdmin()) {
+        return redirect()->route('admin.dashboard');
+    }
+
+    return redirect()->route('bib.blade');
+})->name('dashboard');
+
 // Роут для обработки формы именно из Blade
 Route::post('/upload-bib-blade', [BibFileController::class, 'uploadBlade'])->name('bib.upload.blade');
 
@@ -116,7 +126,7 @@ Route::post('/guest/login', [ProfileController::class, 'loginAsGuest'])->name('g
 /**
  * Роуты для админки
  */
-Route::middleware('auth')->prefix('admin')->name('admin.')->group(function () {
+Route::middleware(['auth', 'role:admin'])->prefix('admin')->name('admin.')->group(function () {
 
     // Главная страница админки
     Route::get('/', function () {
