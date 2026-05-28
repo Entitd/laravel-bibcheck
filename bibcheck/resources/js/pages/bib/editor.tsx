@@ -1,8 +1,21 @@
 import { Head, Link, router, useForm, usePage } from '@inertiajs/react';
-import { CheckCircle2, FilePlus2, TriangleAlert, Upload } from 'lucide-react';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import {
+    CheckCircle2,
+    DatabaseZap,
+    Save,
+    TriangleAlert,
+    Upload,
+} from 'lucide-react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import AppLayout from '@/layouts/app-layout';
 import type { BreadcrumbItem } from '@/types';
+import {
+    analyzeBibtex,
+    type BibtexAnalysis,
+    type BibtexAnalysisError,
+    type BibtexEntry,
+    type BibtexTypeTemplate,
+} from '@/lib/bibtex-validator';
 
 const breadcrumbs: BreadcrumbItem[] = [
     {
@@ -11,26 +24,6 @@ const breadcrumbs: BreadcrumbItem[] = [
     },
 ];
 
-type AnalysisError = {
-    line: number;
-    column: number;
-    length?: number;
-    severity: 'error' | 'warning';
-    message: string;
-};
-
-type Entry = {
-    fields?: {
-        title?: string;
-    };
-    api_check?: {
-        found?: boolean;
-        similarity?: number;
-        message?: string;
-        external_title?: string;
-    };
-};
-
 type PageProps = {
     flash?: {
         success?: string;
@@ -38,24 +31,11 @@ type PageProps = {
     };
 };
 
-type BibtexTypeTemplate = {
-    id: number;
-    name: string;
-    fields: string[];
-};
-
 type BibEditorProps = {
-    analysis?: {
-        raw_content?: string;
-        original_filename?: string;
-        course_comparison_result?: string;
-        aggregated_metrics?: Record<string, number | string>;
-        entries?: Record<string, Entry>;
-        errors?: AnalysisError[];
-    } | null;
-    entries?: Record<string, Entry>;
+    analysis?: BibtexAnalysis | null;
+    entries?: Record<string, BibtexEntry>;
     metrics?: Record<string, number | string>;
-    errors?: AnalysisError[];
+    errors?: BibtexAnalysisError[];
     bibtexTypes?: BibtexTypeTemplate[];
     checkHistory?: {
         id: number;
@@ -72,14 +52,33 @@ function escapeHtml(text: string) {
         .replaceAll('"', '&quot;');
 }
 
-function toErrorsMap(errors: AnalysisError[]) {
-    return errors.reduce<Record<number, AnalysisError[]>>((accumulator, error) => {
-        if (!accumulator[error.line]) {
-            accumulator[error.line] = [];
-        }
-        accumulator[error.line].push(error);
-        return accumulator;
-    }, {});
+function toErrorsMap(errors: BibtexAnalysisError[]) {
+    return errors.reduce<Record<number, BibtexAnalysisError[]>>(
+        (accumulator, error) => {
+            if (!accumulator[error.line]) {
+                accumulator[error.line] = [];
+            }
+            accumulator[error.line].push(error);
+            return accumulator;
+        },
+        {},
+    );
+}
+
+function isBlockingError(error: BibtexAnalysisError) {
+    return error.severity === 'error' || error.severity === 'syntax';
+}
+
+function isPositiveVerdict(verdict?: string) {
+    if (!verdict) {
+        return false;
+    }
+
+    const normalized = verdict.toLowerCase();
+
+    return (
+        normalized.includes('соответствует') && !normalized.startsWith('не ')
+    );
 }
 
 function getTypeTrigger(value: string, caretPosition: number) {
@@ -116,15 +115,18 @@ function buildBibtexSnippet(type: BibtexTypeTemplate) {
 
 export default function BibEditorPage({
     analysis,
-    entries = {},
-    metrics = {},
-    errors = [],
     bibtexTypes = [],
     checkHistory,
 }: BibEditorProps) {
     const page = usePage<PageProps>();
     const flash = page.props.flash;
-    const [liveErrors, setLiveErrors] = useState<AnalysisError[]>(errors);
+    const [liveAnalysis, setLiveAnalysis] = useState<BibtexAnalysis>(
+        () => analysis ?? analyzeBibtex('', bibtexTypes),
+    );
+    const [liveErrors, setLiveErrors] = useState<BibtexAnalysisError[]>(
+        () => liveAnalysis.errors,
+    );
+    const [externalProcessing, setExternalProcessing] = useState(false);
     const uploadForm = useForm({
         bib_file: null as File | null,
     });
@@ -135,8 +137,9 @@ export default function BibEditorPage({
     const textareaRef = useRef<HTMLTextAreaElement | null>(null);
     const lineNumbersRef = useRef<HTMLDivElement | null>(null);
     const contentViewerRef = useRef<HTMLPreElement | null>(null);
-    const debounceRef = useRef<number | null>(null);
-    const pendingSelectionRef = useRef<{ start: number; end: number } | null>(null);
+    const pendingSelectionRef = useRef<{ start: number; end: number } | null>(
+        null,
+    );
     const [activeSuggestionIndex, setActiveSuggestionIndex] = useState(0);
     const [typeTrigger, setTypeTrigger] = useState<{
         query: string;
@@ -144,13 +147,29 @@ export default function BibEditorPage({
         end: number;
     } | null>(null);
 
+    const runLocalAnalysis = useCallback(
+        (value: string) => {
+            const nextAnalysis = analyzeBibtex(value, bibtexTypes);
+
+            setLiveAnalysis(nextAnalysis);
+            setLiveErrors(nextAnalysis.errors);
+        },
+        [bibtexTypes],
+    );
+
     useEffect(() => {
-        setLiveErrors(errors);
+        const nextContent = analysis?.raw_content ?? '';
+        const nextAnalysis =
+            analysis ?? analyzeBibtex(nextContent, bibtexTypes);
+
+        setLiveAnalysis(nextAnalysis);
+        setLiveErrors(nextAnalysis.errors);
         updateForm.setData({
-            bib_content: analysis?.raw_content ?? '',
-            original_filename: analysis?.original_filename ?? 'created_file.bib',
+            bib_content: nextContent,
+            original_filename:
+                analysis?.original_filename ?? 'created_file.bib',
         });
-    }, [analysis?.original_filename, analysis?.raw_content, errors]);
+    }, [analysis, bibtexTypes]);
 
     const errorsByLine = useMemo(() => toErrorsMap(liveErrors), [liveErrors]);
     const suggestedTypes = useMemo(() => {
@@ -177,19 +196,16 @@ export default function BibEditorPage({
         api_not_found: 'Не найдено в OpenAlex',
         api_average_similarity: 'Средний процент совпадения',
     };
-    const verdict = analysis?.course_comparison_result;
-    const isSuccessVerdict = verdict
-        ? verdict.toLowerCase().includes('соответствует')
-        : false;
-
-    useEffect(() => {
-        return () => {
-            if (debounceRef.current) {
-                window.clearTimeout(debounceRef.current);
-            }
-        };
-    }, []);
-
+    const currentEntries = liveAnalysis.entries ?? {};
+    const currentMetrics = liveAnalysis.aggregated_metrics ?? {};
+    const verdict = liveAnalysis.course_comparison_result;
+    const isSuccessVerdict = isPositiveVerdict(verdict);
+    const hasEditorContent = updateForm.data.bib_content.trim().length > 0;
+    const hasExternalResults = Object.values(currentEntries).some(
+        (entry) => entry.api_check,
+    );
+    const errorTotal = liveErrors.filter(isBlockingError).length;
+    const warningTotal = liveErrors.length - errorTotal;
     useEffect(() => {
         if (!suggestedTypes.length) {
             setActiveSuggestionIndex(0);
@@ -236,7 +252,11 @@ export default function BibEditorPage({
     };
 
     const syncScroll = () => {
-        if (!textareaRef.current || !lineNumbersRef.current || !contentViewerRef.current) {
+        if (
+            !textareaRef.current ||
+            !lineNumbersRef.current ||
+            !contentViewerRef.current
+        ) {
             return;
         }
 
@@ -246,37 +266,7 @@ export default function BibEditorPage({
     };
 
     const analyzeText = (value: string) => {
-        if (debounceRef.current) {
-            window.clearTimeout(debounceRef.current);
-        }
-
-        debounceRef.current = window.setTimeout(async () => {
-            try {
-                const response = await fetch('/update-bib', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/x-www-form-urlencoded',
-                        'X-CSRF-TOKEN': document
-                            .querySelector('meta[name="csrf-token"]')
-                            ?.getAttribute('content') ?? '',
-                        'X-Requested-With': 'XMLHttpRequest',
-                    },
-                    body: new URLSearchParams({
-                        bib_content: value,
-                        original_filename: updateForm.data.original_filename,
-                    }),
-                });
-
-                if (!response.ok) {
-                    return;
-                }
-
-                const data = (await response.json()) as { errors?: AnalysisError[] };
-                setLiveErrors(data.errors ?? []);
-            } catch {
-                return;
-            }
-        }, 800);
+        runLocalAnalysis(value);
     };
 
     const lines = updateForm.data.bib_content.split('\n');
@@ -292,10 +282,9 @@ export default function BibEditorPage({
             .forEach((error) => {
                 const start = Math.max((error.column ?? 1) - 1, 0);
                 const length = error.length || 1;
-                const className =
-                    error.severity === 'error'
-                        ? 'border-b-2 border-rose-500 bg-rose-200/40'
-                        : 'border-b-2 border-amber-500 bg-amber-200/40';
+                const className = isBlockingError(error)
+                    ? 'border-b-2 border-rose-500 bg-rose-200/40'
+                    : 'border-b-2 border-amber-500 bg-amber-200/40';
 
                 html =
                     html.slice(0, start) +
@@ -331,24 +320,32 @@ export default function BibEditorPage({
 
                                         uploadForm.clearErrors();
                                         uploadForm.setData('bib_file', file);
-                                        router.post(
-                                            '/upload-bib',
-                                            { bib_file: file },
-                                            {
-                                                forceFormData: true,
-                                                onError: (errors) => {
-                                                    if (errors.bib_file) {
-                                                        uploadForm.setError(
-                                                            'bib_file',
-                                                            String(errors.bib_file),
-                                                        );
-                                                    }
-                                                },
-                                                onFinish: () => {
-                                                    input.value = '';
-                                                },
-                                            },
-                                        );
+                                        const reader = new FileReader();
+
+                                        reader.onload = () => {
+                                            const content =
+                                                typeof reader.result ===
+                                                'string'
+                                                    ? reader.result
+                                                    : '';
+
+                                            updateForm.setData({
+                                                bib_content: content,
+                                                original_filename: file.name,
+                                            });
+                                            runLocalAnalysis(content);
+                                            input.value = '';
+                                        };
+
+                                        reader.onerror = () => {
+                                            uploadForm.setError(
+                                                'bib_file',
+                                                'Не удалось прочитать файл.',
+                                            );
+                                            input.value = '';
+                                        };
+
+                                        reader.readAsText(file);
                                     }}
                                 />
                             </label>
@@ -422,30 +419,40 @@ export default function BibEditorPage({
                                     <div className="border-b border-border px-4 py-4">
                                         <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                                             <div>
-                                                <div className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+                                                <div className="text-xs font-semibold tracking-[0.14em] text-muted-foreground uppercase">
                                                     Название файла
                                                 </div>
                                                 <input
-                                                    value={updateForm.data.original_filename}
-                                                    onChange={(event) =>
-                                                        updateForm.setData('original_filename', event.target.value)
+                                                    value={
+                                                        updateForm.data
+                                                            .original_filename
                                                     }
-                                                    className="mt-2 w-full max-w-sm rounded-xl border border-input bg-card px-3 py-2 text-sm font-medium text-foreground outline-none transition focus:border-ring focus:ring-2 focus:ring-ring/30"
+                                                    onChange={(event) =>
+                                                        updateForm.setData(
+                                                            'original_filename',
+                                                            event.target.value,
+                                                        )
+                                                    }
+                                                    className="mt-2 w-full max-w-sm rounded-xl border border-input bg-card px-3 py-2 text-sm font-medium text-foreground transition outline-none focus:border-ring focus:ring-2 focus:ring-ring/30"
                                                     placeholder="created_file.bib"
                                                 />
-                                                {updateForm.errors.original_filename && (
+                                                {updateForm.errors
+                                                    .original_filename && (
                                                     <div className="mt-2 text-xs text-rose-600">
-                                                        {updateForm.errors.original_filename}
+                                                        {
+                                                            updateForm.errors
+                                                                .original_filename
+                                                        }
                                                     </div>
                                                 )}
                                             </div>
                                             <div className="flex flex-wrap gap-2 text-xs">
                                                 <span className="rounded-full border border-rose-200 bg-rose-50 px-3 py-1.5 font-medium text-rose-700">
-                                                    Ошибки: {liveErrors.filter((item) => item.severity === 'error').length}
+                                                    Ошибки: {errorTotal}
                                                 </span>
                                                 <span className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1.5 font-medium text-amber-700">
                                                     Предупреждения:{' '}
-                                                    {liveErrors.filter((item) => item.severity === 'warning').length}
+                                                    {warningTotal}
                                                 </span>
                                             </div>
                                         </div>
@@ -461,14 +468,20 @@ export default function BibEditorPage({
                                             className="w-14 overflow-hidden border-r border-border bg-muted/30 py-4 text-right font-mono text-sm text-muted-foreground"
                                         >
                                             {lines.map((_, index) => {
-                                                const lineErrors = errorsByLine[index + 1] ?? [];
-                                                const title = lineErrors.map((item) => item.message).join(' | ');
+                                                const lineErrors =
+                                                    errorsByLine[index + 1] ??
+                                                    [];
+                                                const title = lineErrors
+                                                    .map((item) => item.message)
+                                                    .join(' | ');
 
                                                 return (
                                                     <div
                                                         key={index}
                                                         className={`h-6 px-3 ${
-                                                            lineErrors.some((item) => item.severity === 'error')
+                                                            lineErrors.some(
+                                                                isBlockingError,
+                                                            )
                                                                 ? 'font-semibold text-rose-600'
                                                                 : lineErrors.length
                                                                   ? 'font-semibold text-amber-600'
@@ -486,22 +499,32 @@ export default function BibEditorPage({
                                             <pre
                                                 ref={contentViewerRef}
                                                 aria-hidden="true"
-                                                className="pointer-events-none absolute inset-0 overflow-hidden whitespace-pre p-4 font-mono text-sm leading-6 text-transparent"
+                                                className="pointer-events-none absolute inset-0 overflow-hidden p-4 font-mono text-sm leading-6 whitespace-pre text-transparent"
                                                 dangerouslySetInnerHTML={{
-                                                    __html: highlightedLines.join('\n'),
+                                                    __html: highlightedLines.join(
+                                                        '\n',
+                                                    ),
                                                 }}
                                             />
                                             <textarea
                                                 ref={textareaRef}
                                                 spellCheck={false}
-                                                value={updateForm.data.bib_content}
+                                                value={
+                                                    updateForm.data.bib_content
+                                                }
                                                 onChange={(event) => {
-                                                    const nextValue = event.target.value;
-                                                    updateForm.setData('bib_content', nextValue);
+                                                    const nextValue =
+                                                        event.target.value;
+                                                    updateForm.setData(
+                                                        'bib_content',
+                                                        nextValue,
+                                                    );
                                                     setTypeTrigger(
                                                         getTypeTrigger(
                                                             nextValue,
-                                                            event.target.selectionStart ?? nextValue.length,
+                                                            event.target
+                                                                .selectionStart ??
+                                                                nextValue.length,
                                                         ),
                                                     );
                                                     analyzeText(nextValue);
@@ -509,55 +532,88 @@ export default function BibEditorPage({
                                                 onClick={(event) =>
                                                     setTypeTrigger(
                                                         getTypeTrigger(
-                                                            event.currentTarget.value,
-                                                            event.currentTarget.selectionStart ??
-                                                                event.currentTarget.value.length,
+                                                            event.currentTarget
+                                                                .value,
+                                                            event.currentTarget
+                                                                .selectionStart ??
+                                                                event
+                                                                    .currentTarget
+                                                                    .value
+                                                                    .length,
                                                         ),
                                                     )
                                                 }
                                                 onKeyUp={(event) =>
                                                     setTypeTrigger(
                                                         getTypeTrigger(
-                                                            event.currentTarget.value,
-                                                            event.currentTarget.selectionStart ??
-                                                                event.currentTarget.value.length,
+                                                            event.currentTarget
+                                                                .value,
+                                                            event.currentTarget
+                                                                .selectionStart ??
+                                                                event
+                                                                    .currentTarget
+                                                                    .value
+                                                                    .length,
                                                         ),
                                                     )
                                                 }
                                                 onBlur={() => {
-                                                    window.setTimeout(() => setTypeTrigger(null), 120);
+                                                    window.setTimeout(
+                                                        () =>
+                                                            setTypeTrigger(
+                                                                null,
+                                                            ),
+                                                        120,
+                                                    );
                                                 }}
                                                 onKeyDown={(event) => {
-                                                    if (!suggestedTypes.length) {
+                                                    if (
+                                                        !suggestedTypes.length
+                                                    ) {
                                                         return;
                                                     }
 
-                                                    if (event.key === 'ArrowDown') {
+                                                    if (
+                                                        event.key ===
+                                                        'ArrowDown'
+                                                    ) {
                                                         event.preventDefault();
                                                         setActiveSuggestionIndex(
                                                             (currentIndex) =>
-                                                                (currentIndex + 1) %
+                                                                (currentIndex +
+                                                                    1) %
                                                                 suggestedTypes.length,
                                                         );
                                                     }
 
-                                                    if (event.key === 'ArrowUp') {
+                                                    if (
+                                                        event.key === 'ArrowUp'
+                                                    ) {
                                                         event.preventDefault();
                                                         setActiveSuggestionIndex(
                                                             (currentIndex) =>
-                                                                (currentIndex - 1 + suggestedTypes.length) %
+                                                                (currentIndex -
+                                                                    1 +
+                                                                    suggestedTypes.length) %
                                                                 suggestedTypes.length,
                                                         );
                                                     }
 
-                                                    if (event.key === 'Tab' || event.key === 'Enter') {
+                                                    if (
+                                                        event.key === 'Tab' ||
+                                                        event.key === 'Enter'
+                                                    ) {
                                                         event.preventDefault();
                                                         applyTypeSuggestion(
-                                                            suggestedTypes[activeSuggestionIndex],
+                                                            suggestedTypes[
+                                                                activeSuggestionIndex
+                                                            ],
                                                         );
                                                     }
 
-                                                    if (event.key === 'Escape') {
+                                                    if (
+                                                        event.key === 'Escape'
+                                                    ) {
                                                         setTypeTrigger(null);
                                                     }
                                                 }}
@@ -571,39 +627,61 @@ export default function BibEditorPage({
                                             />
                                             {suggestedTypes.length > 0 && (
                                                 <div className="absolute right-4 bottom-4 z-20 w-full max-w-md rounded-2xl border border-border bg-background/95 p-2 shadow-xl backdrop-blur">
-                                                    <div className="px-2 pb-2 text-[11px] font-medium uppercase tracking-[0.12em] text-muted-foreground">
-                                                        BibTeX types from database
+                                                    <div className="px-2 pb-2 text-[11px] font-medium tracking-[0.12em] text-muted-foreground uppercase">
+                                                        BibTeX types from
+                                                        database
                                                     </div>
                                                     <div className="space-y-1">
-                                                        {suggestedTypes.map((type, index) => (
-                                                            <button
-                                                                key={type.id}
-                                                                type="button"
-                                                                onMouseDown={(event) => {
-                                                                    event.preventDefault();
-                                                                    applyTypeSuggestion(type);
-                                                                }}
-                                                                className={`flex w-full items-start justify-between gap-3 rounded-xl px-3 py-2 text-left transition ${
-                                                                    index === activeSuggestionIndex
-                                                                        ? 'bg-accent text-accent-foreground'
-                                                                        : 'hover:bg-muted'
-                                                                }`}
-                                                            >
-                                                                <div className="min-w-0">
-                                                                    <div className="font-mono text-sm font-semibold">
-                                                                        @{type.name}
+                                                        {suggestedTypes.map(
+                                                            (type, index) => (
+                                                                <button
+                                                                    key={
+                                                                        type.id
+                                                                    }
+                                                                    type="button"
+                                                                    onMouseDown={(
+                                                                        event,
+                                                                    ) => {
+                                                                        event.preventDefault();
+                                                                        applyTypeSuggestion(
+                                                                            type,
+                                                                        );
+                                                                    }}
+                                                                    className={`flex w-full items-start justify-between gap-3 rounded-xl px-3 py-2 text-left transition ${
+                                                                        index ===
+                                                                        activeSuggestionIndex
+                                                                            ? 'bg-accent text-accent-foreground'
+                                                                            : 'hover:bg-muted'
+                                                                    }`}
+                                                                >
+                                                                    <div className="min-w-0">
+                                                                        <div className="font-mono text-sm font-semibold">
+                                                                            @
+                                                                            {
+                                                                                type.name
+                                                                            }
+                                                                        </div>
+                                                                        <div className="mt-1 text-xs text-muted-foreground">
+                                                                            {type
+                                                                                .fields
+                                                                                .length
+                                                                                ? type.fields.join(
+                                                                                      ', ',
+                                                                                  )
+                                                                                : 'No fields configured'}
+                                                                        </div>
                                                                     </div>
-                                                                    <div className="mt-1 text-xs text-muted-foreground">
-                                                                        {type.fields.length
-                                                                            ? type.fields.join(', ')
-                                                                            : 'No fields configured'}
+                                                                    <div className="shrink-0 rounded-full border border-border px-2 py-1 text-[10px] font-semibold tracking-[0.12em] text-muted-foreground uppercase">
+                                                                        {
+                                                                            type
+                                                                                .fields
+                                                                                .length
+                                                                        }{' '}
+                                                                        fields
                                                                     </div>
-                                                                </div>
-                                                                <div className="shrink-0 rounded-full border border-border px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
-                                                                    {type.fields.length} fields
-                                                                </div>
-                                                            </button>
-                                                        ))}
+                                                                </button>
+                                                            ),
+                                                        )}
                                                     </div>
                                                 </div>
                                             )}
@@ -611,18 +689,57 @@ export default function BibEditorPage({
                                     </div>
                                 </div>
 
-                                <button
-                                    type="submit"
-                                    disabled={updateForm.processing}
-                                    className="mt-4 inline-flex items-center justify-center gap-2 rounded-2xl bg-foreground px-5 py-3 text-sm font-semibold text-background transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-70"
-                                >
-                                    {!analysis && <FilePlus2 className="h-4 w-4" />}
-                                    {analysis ? 'Сохранить изменения' : 'Создать и проверить'}
-                                </button>
+                                <div className="mt-4 flex flex-wrap gap-3">
+                                    <button
+                                        type="submit"
+                                        disabled={
+                                            updateForm.processing ||
+                                            !hasEditorContent
+                                        }
+                                        className="inline-flex items-center justify-center gap-2 rounded-2xl bg-foreground px-5 py-3 text-sm font-semibold text-background transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-70"
+                                    >
+                                        <Save className="h-4 w-4" />
+                                        Сохранить проверку
+                                    </button>
+                                    <button
+                                        type="button"
+                                        disabled={
+                                            externalProcessing ||
+                                            !hasEditorContent
+                                        }
+                                        onClick={() => {
+                                            setExternalProcessing(true);
+                                            router.post(
+                                                '/check-external-bib',
+                                                {
+                                                    bib_content:
+                                                        updateForm.data
+                                                            .bib_content,
+                                                    original_filename:
+                                                        updateForm.data
+                                                            .original_filename,
+                                                },
+                                                {
+                                                    preserveScroll: true,
+                                                    onFinish: () =>
+                                                        setExternalProcessing(
+                                                            false,
+                                                        ),
+                                                },
+                                            );
+                                        }}
+                                        className="inline-flex items-center justify-center gap-2 rounded-2xl border border-border bg-background px-5 py-3 text-sm font-semibold text-foreground transition hover:bg-accent disabled:cursor-not-allowed disabled:opacity-70"
+                                    >
+                                        <DatabaseZap className="h-4 w-4" />
+                                        {externalProcessing
+                                            ? 'Проверяем внешние базы...'
+                                            : 'Проверить во внешних базах'}
+                                    </button>
+                                </div>
                             </form>
 
                             <div className="space-y-4">
-                                {analysis ? (
+                                {hasEditorContent ? (
                                     <>
                                         <section
                                             className={`rounded-2xl border p-5 ${
@@ -639,24 +756,36 @@ export default function BibEditorPage({
                                                 )}
                                                 <span>Итог проверки</span>
                                             </div>
-                                            <p className="mt-3 text-sm leading-6">{verdict}</p>
+                                            <p className="mt-3 text-sm leading-6">
+                                                {verdict}
+                                            </p>
                                         </section>
 
                                         <section className="rounded-2xl border border-border bg-background p-5">
-                                            <h2 className="text-sm font-semibold text-foreground">Метрики</h2>
+                                            <h2 className="text-sm font-semibold text-foreground">
+                                                Метрики
+                                            </h2>
                                             <div className="mt-4 space-y-3">
-                                                {Object.entries(metrics).length ? (
-                                                    Object.entries(metrics).map(([key, value]) => (
+                                                {Object.entries(currentMetrics)
+                                                    .length ? (
+                                                    Object.entries(
+                                                        currentMetrics,
+                                                    ).map(([key, value]) => (
                                                         <div
                                                             key={key}
                                                             className="flex items-center justify-between gap-3 border-b border-border pb-3 text-sm last:border-b-0 last:pb-0"
                                                         >
                                                             <span className="text-muted-foreground">
-                                                                {metricLabels[key] ?? key}
+                                                                {metricLabels[
+                                                                    key
+                                                                ] ?? key}
                                                             </span>
                                                             <span className="font-semibold text-foreground">
                                                                 {value}
-                                                                {key === 'api_average_similarity' ? '%' : ''}
+                                                                {key ===
+                                                                'api_average_similarity'
+                                                                    ? '%'
+                                                                    : ''}
                                                             </span>
                                                         </div>
                                                     ))
@@ -673,12 +802,23 @@ export default function BibEditorPage({
                                                 Поиск в OpenAlex
                                             </h2>
                                             <div className="mt-4 space-y-3">
-                                                {Object.entries(entries).length ? (
-                                                    Object.entries(entries).map(([key, entry]) => {
-                                                        const found = entry.api_check?.found;
+                                                {hasExternalResults ? (
+                                                    Object.entries(
+                                                        currentEntries,
+                                                    ).map(([key, entry]) => {
+                                                        const found =
+                                                            entry.api_check
+                                                                ?.found;
                                                         const similarity =
-                                                            entry.api_check?.similarity !== undefined
-                                                                ? Math.round(entry.api_check.similarity)
+                                                            typeof entry
+                                                                .api_check
+                                                                ?.similarity ===
+                                                            'number'
+                                                                ? Math.round(
+                                                                      entry
+                                                                          .api_check
+                                                                          .similarity,
+                                                                  )
                                                                 : null;
 
                                                         return (
@@ -694,16 +834,26 @@ export default function BibEditorPage({
                                                                     {key}
                                                                 </div>
                                                                 <div className="mt-1 text-xs text-muted-foreground">
-                                                                    {entry.fields?.title ?? 'Без названия'}
+                                                                    {entry
+                                                                        .fields
+                                                                        ?.title ??
+                                                                        'Без названия'}
                                                                 </div>
                                                                 <div className="mt-3 text-xs">
-                                                                    {similarity !== null ? (
+                                                                    {similarity !==
+                                                                    null ? (
                                                                         <span className="rounded-full border border-border bg-card px-2.5 py-1 font-semibold text-foreground">
-                                                                            {similarity}%
+                                                                            {
+                                                                                similarity
+                                                                            }
+                                                                            %
                                                                         </span>
                                                                     ) : (
                                                                         <span className="text-muted-foreground">
-                                                                            {entry.api_check?.message ?? 'Не найдено'}
+                                                                            {entry
+                                                                                .api_check
+                                                                                ?.message ??
+                                                                                'Не найдено'}
                                                                         </span>
                                                                     )}
                                                                 </div>
@@ -712,7 +862,9 @@ export default function BibEditorPage({
                                                     })
                                                 ) : (
                                                     <p className="text-sm text-muted-foreground">
-                                                        Результаты поиска в OpenAlex пока недоступны.
+                                                        Результаты поиска в
+                                                        OpenAlex пока
+                                                        недоступны.
                                                     </p>
                                                 )}
                                             </div>

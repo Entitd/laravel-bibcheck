@@ -31,7 +31,7 @@ class BibFileController extends Controller
         ]);
 
         $content = Storage::get($path);
-        $analysisResults = $this->parserService->fullCheck($content);
+        $analysisResults = $this->parserService->localCheck($content);
 
         $analysisResults['raw_content'] = $content;
         $analysisResults['original_filename'] = $bibFile->filename;
@@ -51,7 +51,7 @@ class BibFileController extends Controller
 
         $content = $validated['bib_content'];
         $filename = $this->normalizeFilename($validated['original_filename']);
-        $path = 'bib_uploads/' . Str::uuid() . '_' . $filename;
+        $path = 'bib_uploads/'.Str::uuid().'_'.$filename;
 
         Storage::put($path, $content);
 
@@ -61,7 +61,7 @@ class BibFileController extends Controller
             'status' => 'completed',
         ]);
 
-        $analysisResults = $this->parserService->fullCheck($content);
+        $analysisResults = $this->parserService->localCheck($content);
 
         $analysisResults['raw_content'] = $content;
         $analysisResults['original_filename'] = $bibFile->filename;
@@ -83,7 +83,7 @@ class BibFileController extends Controller
 
         $content = $request->input('bib_content');
 
-        $analysisResults = $this->parserService->fullCheck($content);
+        $analysisResults = $this->parserService->localCheck($content);
 
         $analysisResults['raw_content'] = $content;
         $analysisResults['original_filename'] = $this->normalizeFilename($request->input('original_filename', 'edited_file.bib'));
@@ -100,6 +100,23 @@ class BibFileController extends Controller
         return redirect()->route('bib.blade')->with('analysis', $analysisResults);
     }
 
+    public function checkExternal(Request $request)
+    {
+        $validated = $request->validate([
+            'bib_content' => 'required|string',
+            'original_filename' => 'required|string|max:255',
+        ]);
+
+        $content = $validated['bib_content'];
+        $analysisResults = $this->parserService->fullCheck($content);
+
+        $analysisResults['raw_content'] = $content;
+        $analysisResults['original_filename'] = $this->normalizeFilename($validated['original_filename']);
+        $analysisResults['course_comparison_result'] = $this->generateVerdict($analysisResults['aggregated_metrics']);
+
+        return redirect()->route('bib.blade')->with('analysis', $analysisResults);
+    }
+
     private function normalizeFilename(string $filename): string
     {
         $filename = trim($filename) ?: 'created_file.bib';
@@ -112,6 +129,9 @@ class BibFileController extends Controller
     private function generateVerdict(array $metrics): string
     {
         $total = $metrics['totalQuantity'] ?? 0;
+        $hasApiMetrics = array_key_exists('api_found', $metrics)
+            || array_key_exists('api_not_found', $metrics)
+            || array_key_exists('api_errors', $metrics);
 
         if ($total === 0) {
             return 'Не удалось проанализировать ни одной записи.';
@@ -138,24 +158,30 @@ class BibFileController extends Controller
         if ($modern === 0) {
             $issues[] = 'нет источников XXI века';
         }
-        if ($apiErrors > 0) {
-            $issues[] = "ошибки связи с OpenAlex ({$apiErrors})";
-        } elseif ($apiFound === 0 && $total > 0) {
-            $issues[] = 'ни один источник не найден в OpenAlex';
+        if ($hasApiMetrics) {
+            if ($apiErrors > 0) {
+                $issues[] = "ошибки связи с OpenAlex ({$apiErrors})";
+            } elseif ($apiFound === 0 && $total > 0) {
+                $issues[] = 'ни один источник не найден в OpenAlex';
+            }
+        }
+
+        if (empty($issues) && ! $hasApiMetrics) {
+            return "Полностью соответствует требованиям. Источников: {$total}, иностранных: {$foreign}, периодика: {$periodicals}, современные: {$modern}.";
         }
 
         if (empty($issues)) {
             return "Полностью соответствует требованиям. Источников: {$total}, иностранных: {$foreign}, периодика: {$periodicals}, современные: {$modern}, найдено в OpenAlex: {$apiFound} (среднее совпадение: {$apiAvgSimilarity}%).";
         }
 
-        return 'Не соответствует требованиям кафедры: ' . implode(', ', $issues) . '.';
+        return 'Не соответствует требованиям кафедры: '.implode(', ', $issues).'.';
     }
 
     private function saveToHistory(string $filename, string $content, array $analysisResults): void
     {
         $user = Auth::user();
 
-        if (!$user) {
+        if (! $user) {
             return;
         }
 
@@ -166,10 +192,10 @@ class BibFileController extends Controller
         $warningCount = 0;
 
         foreach ($errors as $error) {
-            if (($error['severity'] ?? 'error') === 'warning') {
-                $warningCount++;
-            } else {
+            if (in_array($error['severity'] ?? 'error', ['error', 'syntax'], true)) {
                 $errorCount++;
+            } else {
+                $warningCount++;
             }
         }
 

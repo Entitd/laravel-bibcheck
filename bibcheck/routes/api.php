@@ -1,6 +1,9 @@
 <?php
 
+use App\Http\Controllers\Api\ApiBibMetadataController;
 use App\Http\Controllers\Api\ApiBibParserController;
+use App\Http\Controllers\Api\ApiBibValidationController;
+use App\Http\Controllers\Api\ApiSourceController;
 use Illuminate\Support\Facades\Route;
 
 
@@ -19,8 +22,15 @@ use Illuminate\Support\Facades\Route;
  */
 Route::post('/bib/parse', [ApiBibParserController::class, 'parse']);
 Route::post('/bib/check-gost', [ApiBibValidationController::class, 'checkGost']);
+Route::post('/bib/check-full', [ApiBibValidationController::class, 'checkFull']);
+Route::post('/bib/check-department', [ApiBibValidationController::class, 'checkDepartment']);
+Route::post('/bib/check-external', [ApiBibValidationController::class, 'checkExternal']);
 
+Route::get('/bib/types', [ApiBibMetadataController::class, 'types']);
+Route::get('/bib/types/{type}/fields', [ApiBibMetadataController::class, 'fields']);
+Route::get('/requirements', [ApiBibMetadataController::class, 'requirements']);
 
+Route::post('/sources/verify', [ApiSourceController::class, 'verify']);
 
 
 

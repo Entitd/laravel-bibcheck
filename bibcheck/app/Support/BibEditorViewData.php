@@ -17,8 +17,10 @@ class BibEditorViewData
         $errors = $analysisData['errors'] ?? [];
 
         $totalEntries = count($entries);
-        $errorCount = collect($errors)->where('severity', 'error')->count();
-        $warningCount = collect($errors)->where('severity', 'warning')->count();
+        $errorCount = collect($errors)
+            ->filter(fn (array $error) => in_array($error['severity'] ?? 'error', ['error', 'syntax'], true))
+            ->count();
+        $warningCount = collect($errors)->count() - $errorCount;
         $apiFoundCount = collect($entries)->filter(fn (array $entry) => data_get($entry, 'api_check.found'))->count();
         $apiErrorCount = collect($entries)->filter(fn (array $entry) => data_get($entry, 'api_check.status') === 'api_error')->count();
         $averageSimilarity = $metrics['api_average_similarity'] ?? null;

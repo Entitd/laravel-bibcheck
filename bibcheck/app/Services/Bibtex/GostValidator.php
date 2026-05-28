@@ -46,6 +46,23 @@ class GostValidator
         'school' => ["author", "title", "institution", "year"],
     ];
 
+    private const LANGUAGE_FIELDS = ['language', 'langid', 'hyphenation'];
+
+    public static function supportedTypes(): array
+    {
+        return self::BIBTEX_DB_TYPES;
+    }
+
+    public static function requiredFieldsFor(string $type): ?array
+    {
+        return self::BIBTEX_DB_TYPES[strtolower($type)] ?? null;
+    }
+
+    public static function recommendedFields(): array
+    {
+        return self::LANGUAGE_FIELDS;
+    }
+
 
     /**
      * Валидирует одну записи (DTO) на соответствие ГОСТ
@@ -86,7 +103,7 @@ class GostValidator
             }
 
             // Рекомендация по языку
-            $langFields = ['language', 'langid', 'hyphenation'];
+            $langFields = self::LANGUAGE_FIELDS;
             if (!array_intersect(array_keys($fields), $langFields)) {
                 $errors[] = [
                     'severity' => 'info',
